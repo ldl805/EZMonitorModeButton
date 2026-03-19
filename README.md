@@ -1,65 +1,41 @@
-# Monitor Mode Manager
+# EZMonitorModeButton
 
-A simple GUI and set of scripts to easily toggle Monitor Mode on `wlan1` (or your specified interface) and launch common wireless auditing tools.
+A simple Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface (default: `wlan1`).
 
 ## Features
+- **One-click Enable:** Kills conflicting processes and enables monitor mode.
+- **One-click Disable:** Stops monitor mode and restores network services.
+- **Shortcuts:** Quick buttons to launch common security tools like Wifite, Wireshark, and Kismet.
 
-- **GUI Control**: Toggle Monitor Mode ON and OFF with a simple click.
-- **Smart Restoration**: When disabling Monitor Mode, it attempts to restart networking services (`NetworkManager`, `avahi`, `wpa_supplicant`) to restore internet connectivity.
-- **Tool Shortcuts**: Quick launch buttons for `Wifite`, `Wireshark`, and `Kismet`.
+## Installation (Recommended)
 
-## Prerequisites / Dependencies
+### Option 1: Debian Package (Pi/Ubuntu/Debian)
 
-This tool requires the following packages to be installed:
-
-- `python3`
-- `python3-tk` (for the GUI)
-- `aircrack-ng` (provides `airmon-ng`)
-- `wireless-tools` (usually installed by default)
-- `sudo` access
-
-Optional (but recommended for the shortcuts to work):
-- `wifite`
-- `wireshark`
-- `kismet`
-
-## Installation
-
-1.  Clone this repository (or download the folder).
-2.  Run the installation script to ensure dependencies are met (Debian/Ubuntu/Kali):
-    ```bash
-    sudo ./install.sh
-    ```
-
-## Usage
-
-Run the GUI with root privileges:
+Download the latest `.deb` file from the [Releases](https://github.com/ldl805/EZMonitorModeButton/releases) page and install it using:
 
 ```bash
-sudo ./monitor_gui.py
+sudo apt update
+sudo apt install ./ezmonitormode_1.0_all.deb
 ```
 
-### Manual Usage
+Once installed, you can launch it from your application menu or by running `ezmonitormode` in the terminal.
 
-You can also use the scripts directly:
+### Option 2: Running from Source
 
-- **Enable Monitor Mode:**
-  ```bash
-  sudo ./monitor_mode.sh
-  ```
-
-- **Disable Monitor Mode:**
-  ```bash
-  sudo ./stop_monitor_mode.sh
-  ```
-
-## Configuration
-
-To change the default interface from `wlan1` to something else (e.g., `wlan0`), edit the `INTERFACE` variable at the top of:
-- `monitor_gui.py`
-- `monitor_mode.sh`
-- `stop_monitor_mode.sh`
+1.  **Clone this repository:**
+    ```bash
+    git clone https://github.com/ldl805/EZMonitorModeButton.git
+    cd EZMonitorModeButton
+    ```
+2.  **Run the installation script** to install dependencies:
+    ```bash
+    chmod +x install.sh
+    ./install.sh
+    ```
+3.  **Run the application:**
+    ```bash
+    sudo python3 monitor_gui.py
+    ```
 
 ## License
-
-MIT
+MIT License
