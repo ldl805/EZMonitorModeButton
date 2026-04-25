@@ -16,9 +16,20 @@ class TestMonitorGUI(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        with patch('tkinter.Tk'):
-            self.mock_root = MagicMock()
-            self.gui = MonitorGUI(self.mock_root)
+        # Patch all of tkinter to avoid issues in headless environments
+        self.tk_patcher = patch('ezmonitormode.monitor_gui.tk')
+        self.mock_tk = self.tk_patcher.start()
+        
+        self.msgbox_patcher = patch('ezmonitormode.monitor_gui.messagebox')
+        self.mock_msgbox = self.msgbox_patcher.start()
+        
+        self.mock_root = MagicMock()
+        self.gui = MonitorGUI(self.mock_root)
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        self.tk_patcher.stop()
+        self.msgbox_patcher.stop()
 
     def test_gui_initialization(self):
         """Test that MonitorGUI initializes correctly."""
@@ -77,7 +88,7 @@ class TestMonitorGUI(unittest.TestCase):
 
     def test_status_var_initialization(self):
         """Test that status variable is properly initialized."""
-        self.assertEqual(self.gui.status_var.get(), "Ready")
+        self.gui.status_var.set.assert_called_with("Ready")
 
 
 def test_module_imports():

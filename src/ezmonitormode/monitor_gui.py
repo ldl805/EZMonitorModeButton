@@ -23,7 +23,7 @@ class MonitorGUI:
         self.label.pack(pady=10)
 
         # Status Label
-        self.status_var = tk.StringVar()
+        self.status_var = tk.StringVar(master=master)
         self.status_var.set("Ready")
         self.status_label = tk.Label(master, textvariable=self.status_var, fg="blue")
         self.status_label.pack(pady=5)

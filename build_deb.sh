@@ -41,9 +41,9 @@ EOF
 chmod 755 "$PKG_DIR/usr/bin/$APP_NAME"
 
 # Copy application files
-cp monitor_gui.py "$PKG_DIR/usr/share/$APP_NAME/"
-cp monitor_mode.sh "$PKG_DIR/usr/share/$APP_NAME/"
-cp stop_monitor_mode.sh "$PKG_DIR/usr/share/$APP_NAME/"
+cp src/ezmonitormode/monitor_gui.py "$PKG_DIR/usr/share/$APP_NAME/"
+cp src/ezmonitormode/monitor_mode.sh "$PKG_DIR/usr/share/$APP_NAME/"
+cp src/ezmonitormode/stop_monitor_mode.sh "$PKG_DIR/usr/share/$APP_NAME/"
 cp ezmonitormode.desktop "$PKG_DIR/usr/share/applications/"
 
 # Build package
