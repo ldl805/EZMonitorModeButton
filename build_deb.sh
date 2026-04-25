@@ -2,7 +2,7 @@
 # Script to build a Debian package for EZMonitorMode
 
 APP_NAME="ezmonitormode"
-VERSION="1.0"
+VERSION="1.1"
 PKG_DIR="${APP_NAME}_${VERSION}_all"
 
 echo "Building Debian package $PKG_DIR..."
