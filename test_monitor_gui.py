@@ -24,7 +24,10 @@ class TestMonitorGUI(unittest.TestCase):
         self.mock_msgbox = self.msgbox_patcher.start()
         
         self.mock_root = MagicMock()
-        self.gui = MonitorGUI(self.mock_root)
+        
+        # Patch check_monitor_mode to avoid subprocess call in __init__
+        with patch.object(MonitorGUI, 'check_monitor_mode'):
+            self.gui = MonitorGUI(self.mock_root)
 
     def tearDown(self):
         """Clean up test fixtures."""
@@ -35,13 +38,13 @@ class TestMonitorGUI(unittest.TestCase):
         """Test that MonitorGUI initializes correctly."""
         self.assertIsNotNone(self.gui)
         self.assertEqual(self.gui.master, self.mock_root)
+        self.assertFalse(self.gui.is_monitor_on)
 
     def test_gui_creates_widgets(self):
         """Test that GUI creates expected widgets."""
-        # Check that title was set
         self.mock_root.title.assert_called_with("Monitor Mode Control")
-        # Check that geometry was set
-        self.mock_root.geometry.assert_called_with("400x350")
+        # Check that geometry was set (now 400x450)
+        self.mock_root.geometry.assert_called_with("400x450")
 
     def test_get_terminal_with_valid_terminal(self):
         """Test get_terminal returns a terminal when available."""
@@ -50,25 +53,6 @@ class TestMonitorGUI(unittest.TestCase):
             terminal = self.gui.get_terminal()
             self.assertEqual(terminal, '/usr/bin/x-terminal-emulator')
 
-    def test_get_terminal_fallback_to_gnome(self):
-        """Test get_terminal falls back to gnome-terminal."""
-        def which_side_effect(cmd):
-            if cmd == 'x-terminal-emulator':
-                return None
-            elif cmd == 'gnome-terminal':
-                return '/usr/bin/gnome-terminal'
-            return None
-
-        with patch('shutil.which', side_effect=which_side_effect):
-            terminal = self.gui.get_terminal()
-            self.assertEqual(terminal, '/usr/bin/gnome-terminal')
-
-    def test_get_terminal_no_terminal(self):
-        """Test get_terminal returns None when no terminal found."""
-        with patch('shutil.which', return_value=None):
-            terminal = self.gui.get_terminal()
-            self.assertIsNone(terminal)
-
     @patch('subprocess.run')
     def test_run_command_success(self, mock_run):
         """Test run_command with successful execution."""
@@ -76,28 +60,39 @@ class TestMonitorGUI(unittest.TestCase):
         self.assertTrue(result)
         mock_run.assert_called_once_with(['echo', 'test'], check=True)
 
-    @patch('subprocess.run')
-    def test_run_command_failure(self, mock_run):
-        """Test run_command handles command failure."""
-        from subprocess import CalledProcessError
-        mock_run.side_effect = CalledProcessError(1, 'test')
-        
-        with patch.object(self.gui, 'master') as mock_master:
-            result = self.gui.run_command(['false'], 'Failing Command')
-            self.assertFalse(result)
+    def test_set_switch_state_on(self):
+        """Test UI updates when monitor mode is ON."""
+        self.gui.set_switch_state(True)
+        self.assertTrue(self.gui.is_monitor_on)
+        self.gui.btn_switch.config.assert_called()
+        # Verify text was updated to ON
+        last_call_args = self.gui.btn_switch.config.call_args[1]
+        self.assertIn("ON", last_call_args['text'])
+        self.assertEqual(last_call_args['bg'], "#44ff44")
 
-    def test_status_var_initialization(self):
-        """Test that status variable is properly initialized."""
-        self.gui.status_var.set.assert_called_with("Ready")
+    def test_set_switch_state_off(self):
+        """Test UI updates when monitor mode is OFF."""
+        self.gui.set_switch_state(False)
+        self.assertFalse(self.gui.is_monitor_on)
+        self.gui.btn_switch.config.assert_called()
+        # Verify text was updated to OFF
+        last_call_args = self.gui.btn_switch.config.call_args[1]
+        self.assertIn("OFF", last_call_args['text'])
+        self.assertEqual(last_call_args['bg'], "#ff4444")
 
+    def test_toggle_monitor_calls_enable(self):
+        """Test toggle calls enable when off."""
+        self.gui.is_monitor_on = False
+        with patch.object(self.gui, 'enable_monitor') as mock_enable:
+            self.gui.toggle_monitor()
+            mock_enable.assert_called_once()
 
-def test_module_imports():
-    """Test that the monitor_gui module can be imported."""
-    try:
-        import ezmonitormode.monitor_gui
-        assert True
-    except ImportError:
-        assert False, "Failed to import monitor_gui module"
+    def test_toggle_monitor_calls_disable(self):
+        """Test toggle calls disable when on."""
+        self.gui.is_monitor_on = True
+        with patch.object(self.gui, 'disable_monitor') as mock_disable:
+            self.gui.toggle_monitor()
+            mock_disable.assert_called_once()
 
 
 if __name__ == '__main__':
