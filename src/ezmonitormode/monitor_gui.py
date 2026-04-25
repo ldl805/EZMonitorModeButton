@@ -146,7 +146,10 @@ class MonitorGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch Wireshark:\n{e}")
 
-if __name__ == "__main__":
+def main():
     root = tk.Tk()
     app = MonitorGUI(root)
     root.mainloop()
+
+if __name__ == "__main__":
+    main()
