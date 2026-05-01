@@ -1,0 +1,11 @@
+Package: ezmonitormode
+Version: 1.1
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3, python3-tk, aircrack-ng, wireless-tools
+Recommends: wifite, wireshark, kismet
+Maintainer: ldl805 <ldl805@github.com>
+Description: EZ Monitor Mode Manager
+ A simple GUI to switch wireless interfaces into monitor mode and launch security tools.
+ Automates airmon-ng check kill and interface management.

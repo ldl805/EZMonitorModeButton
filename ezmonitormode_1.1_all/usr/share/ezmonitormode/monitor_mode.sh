@@ -2,9 +2,8 @@
 
 # Script to switch a wireless interface into monitor mode.
 
-INTERFACE="${1:-wlan1}" # Use first argument or default to wlan1
+INTERFACE="wlan1" # The wireless interface to put into monitor mode
 
-echo "Target interface: $INTERFACE"
 echo "This script will prepare your system for monitor mode by killing conflicting processes"
 echo "and then attempt to switch $INTERFACE into monitor mode."
 echo "Root privileges (sudo) will be required."

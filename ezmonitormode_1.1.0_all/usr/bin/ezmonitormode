@@ -1,0 +1,20 @@
+#!/bin/bash
+# Wrapper for EZMonitorMode to handle sudo and DISPLAY
+
+# Ensure DISPLAY is set for GUI
+if [ -z "$DISPLAY" ]; then
+    export DISPLAY=:0
+fi
+
+# Check for sudo/root
+if [ "$EUID" -ne 0 ]; then
+    # Try to use pkexec for a GUI password prompt, preserving environment
+    if command -v pkexec >/dev/null 2>&1; then
+        exec pkexec env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" python3 /usr/share/ezmonitormode/monitor_gui.py "$@"
+    else
+        echo "Error: Root privileges required. Please run with: sudo -E ezmonitormode"
+        exit 1
+    fi
+else
+    python3 /usr/share/ezmonitormode/monitor_gui.py "$@"
+fi

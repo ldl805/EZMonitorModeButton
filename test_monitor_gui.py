@@ -27,7 +27,7 @@ class TestMonitorGUI(unittest.TestCase):
         
         # Patch check_monitor_mode to avoid subprocess call in __init__
         with patch.object(MonitorGUI, 'check_monitor_mode'):
-            self.gui = MonitorGUI(self.mock_root)
+            self.gui = MonitorGUI(self.mock_root, ["wlan0", "wlan1"])
 
     def tearDown(self):
         """Clean up test fixtures."""
@@ -38,13 +38,14 @@ class TestMonitorGUI(unittest.TestCase):
         """Test that MonitorGUI initializes correctly."""
         self.assertIsNotNone(self.gui)
         self.assertEqual(self.gui.master, self.mock_root)
+        self.assertEqual(self.gui.interface, "wlan0") # First interface
         self.assertFalse(self.gui.is_monitor_on)
 
     def test_gui_creates_widgets(self):
         """Test that GUI creates expected widgets."""
-        self.mock_root.title.assert_called_with("Monitor Mode Control")
-        # Check that geometry was set (now 400x450)
-        self.mock_root.geometry.assert_called_with("400x450")
+        self.mock_root.title.assert_called_with("EZ Monitor Mode 1.1.0")
+        # Check that geometry was set (now 400x500)
+        self.mock_root.geometry.assert_called_with("400x500")
 
     def test_get_terminal_with_valid_terminal(self):
         """Test get_terminal returns a terminal when available."""

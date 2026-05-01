@@ -1,27 +1,28 @@
 #!/bin/bash
 
-# Script to disable monitor mode and restore network services.
+# Script to disable monitor mode on wlan1 and restore network services.
+# This script is intended to be the counterpart to monitor_mode.sh
+
+# The interface usually becomes wlan1mon after airmon-ng start.
+# We will attempt to stop that, or wlan1 if wlan1mon doesn't exist.
+
+MON_INTERFACE="wlan1mon"
+ORIG_INTERFACE="wlan1"
 
 echo "Attempting to disable monitor mode..."
 
-# Detect which interface is currently in monitor mode
-MON_IFACE=$(iwconfig 2>/dev/null | grep "Mode:Monitor" | awk '{print $1}' | head -n 1)
-
-if [ -n "$MON_IFACE" ]; then
-    echo "Found monitor interface: $MON_IFACE"
-    echo "Stopping $MON_IFACE..."
-    sudo airmon-ng stop "$MON_IFACE"
+# Try stopping wlan1mon first
+if ip link show "$MON_INTERFACE" > /dev/null 2>&1; then
+    echo "Stopping $MON_INTERFACE..."
+    sudo airmon-ng stop "$MON_INTERFACE"
 else
-    echo "No interface in monitor mode detected via iwconfig."
-    echo "Attempting fallback airmon-ng stop on common names..."
-    sudo airmon-ng stop wlan0mon >/dev/null 2>&1
-    sudo airmon-ng stop wlan1mon >/dev/null 2>&1
-    sudo airmon-ng stop wlan0 >/dev/null 2>&1
-    sudo airmon-ng stop wlan1 >/dev/null 2>&1
+    echo "$MON_INTERFACE not found. Checking for $ORIG_INTERFACE in monitor mode..."
+    # If wlan1 is in monitor mode (sometimes airmon-ng doesn't rename it)
+    sudo airmon-ng stop "$ORIG_INTERFACE"
 fi
 
 echo "Restarting network services..."
-...
+
 # Restart NetworkManager (manages connections)
 if systemctl list-unit-files | grep -q NetworkManager; then
     echo "Restarting NetworkManager..."
