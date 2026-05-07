@@ -29,29 +29,30 @@ Description: EZ Monitor Mode Manager
  Now with improved interface detection and better display handling.
 EOF
 
-# Create wrapper (Improved to handle DISPLAY and XAUTHORITY)
+# Create wrapper (Improved to handle DISPLAY, XAUTHORITY and xhost)
 cat <<EOF > "$PKG_DIR/usr/bin/$APP_NAME"
 #!/bin/bash
 # Wrapper for EZMonitorMode to handle sudo and DISPLAY
 
-# Ensure DISPLAY is set for GUI
+# Ensure DISPLAY is set
 if [ -z "\$DISPLAY" ]; then
-    if [ -e "/tmp/.X11-unix/X0" ]; then
-        export DISPLAY=:0
-    fi
+    export DISPLAY=:0
 fi
 
-# Detect XAUTHORITY if not set
-if [ -z "\$XAUTHORITY" ] && [ -n "\$SUDO_USER" ]; then
-    USER_HOME=\$(eval echo "~\$SUDO_USER")
-    if [ -e "\$USER_HOME/.Xauthority" ]; then
-        export XAUTHORITY="\$USER_HOME/.Xauthority"
+# Function to grant X11 access to root if needed
+grant_x11_access() {
+    if command -v xhost >/dev/null 2>&1; then
+        # Try to allow local root access to the X server
+        xhost +si:localuser:root >/dev/null 2>&1
     fi
-fi
+}
 
 # Check for root
 if [ "\$EUID" -ne 0 ]; then
-    # Try to use pkexec for a GUI password prompt, preserving environment
+    # Grant access before elevating
+    grant_x11_access
+    
+    # Try to use pkexec for a GUI password prompt
     if command -v pkexec >/dev/null 2>&1; then
         exec pkexec env DISPLAY="\$DISPLAY" XAUTHORITY="\$XAUTHORITY" python3 /usr/share/$APP_NAME/monitor_gui.py "\$@"
     else
@@ -59,6 +60,8 @@ if [ "\$EUID" -ne 0 ]; then
         exit 1
     fi
 else
+    # Already root, ensure we have access
+    grant_x11_access
     python3 /usr/share/$APP_NAME/monitor_gui.py "\$@"
 fi
 EOF
