@@ -1,32 +1,48 @@
 #!/usr/bin/env python3
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import subprocess
 import os
 import shutil
 import sys
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-# Default interfaces - will be updated by detection
-INTERFACE = "wlan1"
-MON_INTERFACE = "wlan1mon"
-
-# Look for script in the same directory as the python script
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STOP_SCRIPT = os.path.join(BASE_DIR, "stop_monitor_mode.sh")
+VERSION = "1.2.0"
 
 def detect_interfaces():
-    """Detects wireless interfaces and returns a list."""
+    """Detects wireless interfaces and returns a list using 'iw dev' or 'iwconfig'."""
+    interfaces = []
+    # Try 'iw dev' first (modern)
     try:
-        output = subprocess.check_output(["iwconfig"], stderr=subprocess.STDOUT).decode()
-        interfaces = []
+        output = subprocess.check_output(["iw", "dev"], stderr=subprocess.STDOUT).decode()
         for line in output.split("\n"):
-            if "IEEE 802.11" in line:
-                iface = line.split()[0]
+            if "Interface" in line:
+                iface = line.split()[1]
                 interfaces.append(iface)
-        return interfaces
-    except Exception:
-        return []
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Fallback to 'iwconfig'
+        try:
+            output = subprocess.check_output(["iwconfig"], stderr=subprocess.STDOUT).decode()
+            for line in output.split("\n"):
+                if "IEEE 802.11" in line:
+                    iface = line.split()[0]
+                    interfaces.append(iface)
+        except Exception as e:
+            logging.error(f"Failed to detect interfaces: {e}")
+    
+    return sorted(list(set(interfaces)))
+
+def center_window(window, width, height):
+    """Centers the window on the screen."""
+    screen_width = window.winfo_screenwidth()
+    screen_height = window.winfo_screenheight()
+    x = (screen_width // 2) - (width // 2)
+    y = (screen_height // 2) - (height // 2)
+    window.geometry(f'{width}x{height}+{x}+{y}')
 
 class MonitorGUI:
     def __init__(self, master, interfaces):
@@ -34,28 +50,35 @@ class MonitorGUI:
         self.interfaces = interfaces
         self.interface = interfaces[0] if interfaces else "wlan1"
         
-        master.title("EZ Monitor Mode 1.1.0")
-        master.geometry("400x500")
+        master.title(f"EZ Monitor Mode {VERSION}")
+        center_window(master, 400, 520)
         master.resizable(False, False)
 
+        # Style
+        self.style = ttk.Style()
+        
         # Monitor Mode State
         self.is_monitor_on = False
 
-        # --- Top: Interface Selection (New) ---
-        if len(self.interfaces) > 1:
-            iface_frame = tk.Frame(master)
-            iface_frame.pack(fill="x", padx=10, pady=5)
-            tk.Label(iface_frame, text="Interface:").pack(side="left")
+        # --- Top: Interface Selection ---
+        iface_frame = tk.Frame(master)
+        iface_frame.pack(fill="x", padx=15, pady=10)
+        tk.Label(iface_frame, text="Wireless Interface:", font=("Helvetica", 10, "bold")).pack(side="left")
+        
+        if self.interfaces:
             self.iface_var = tk.StringVar(value=self.interface)
-            self.iface_menu = tk.OptionMenu(iface_frame, self.iface_var, *self.interfaces, command=self.update_interface)
-            self.iface_menu.pack(side="left", fill="x", expand=True)
+            self.iface_menu = ttk.OptionMenu(iface_frame, self.iface_var, self.interface, *self.interfaces, command=self.update_interface)
+            self.iface_menu.pack(side="left", fill="x", expand=True, padx=5)
         else:
-            tk.Label(master, text=f"Interface: {self.interface}", font=("Helvetica", 10)).pack(pady=5)
+            tk.Label(iface_frame, text="No interfaces found!", fg="red").pack(side="left", padx=5)
 
-        # --- Top Half: The "Light Switch" ---
-        self.switch_frame = tk.Frame(master, height=180)
-        self.switch_frame.pack(fill="x", side="top", padx=10, pady=10)
-        self.switch_frame.pack_propagate(False) # Keep height
+        self.btn_refresh = tk.Button(iface_frame, text="↻", command=self.refresh_interfaces, width=2)
+        self.btn_refresh.pack(side="right")
+
+        # --- Middle: The "Light Switch" ---
+        self.switch_frame = tk.Frame(master, height=180, relief="groove", borderwidth=2)
+        self.switch_frame.pack(fill="x", side="top", padx=15, pady=5)
+        self.switch_frame.pack_propagate(False)
 
         self.btn_switch = tk.Button(
             self.switch_frame, 
@@ -65,57 +88,85 @@ class MonitorGUI:
             fg="white",
             activebackground="#cc0000",
             activeforeground="white",
+            relief="raised",
             command=self.toggle_monitor
         )
         self.btn_switch.pack(fill="both", expand=True)
 
-        # --- Bottom Half: Status and Tools ---
+        # --- Bottom: Status and Tools ---
         
         # Status Label
         self.status_var = tk.StringVar(master=master)
         self.status_var.set("Ready")
-        self.status_label = tk.Label(master, textvariable=self.status_var, font=("Helvetica", 10, "italic"))
-        self.status_label.pack(pady=5)
+        self.status_label = tk.Label(master, textvariable=self.status_var, font=("Helvetica", 10, "italic"), wraplength=350)
+        self.status_label.pack(pady=10)
 
-        # Tools Label
-        self.tools_label = tk.Label(master, text="Quick Tools", font=("Helvetica", 12, "bold"))
-        self.tools_label.pack(pady=(10, 5))
+        # Tools Section
+        separator = ttk.Separator(master, orient='horizontal')
+        separator.pack(fill='x', padx=15, pady=5)
 
-        # Tools Frame
+        tk.Label(master, text="Quick Tools", font=("Helvetica", 12, "bold")).pack(pady=5)
+
         self.tools_frame = tk.Frame(master)
         self.tools_frame.pack(pady=5)
 
-        # Tool Buttons
-        self.btn_wifite = tk.Button(self.tools_frame, text="Wifite", width=12, height=2, command=self.run_wifite)
+        # Tool Buttons with better styling
+        btn_opts = {"width": 15, "height": 2}
+        self.btn_wifite = tk.Button(self.tools_frame, text="Launch Wifite", **btn_opts, command=self.run_wifite)
         self.btn_wifite.grid(row=0, column=0, padx=5, pady=5)
 
-        self.btn_wireshark = tk.Button(self.tools_frame, text="Wireshark", width=12, height=2, command=self.run_wireshark)
+        self.btn_wireshark = tk.Button(self.tools_frame, text="Launch Wireshark", **btn_opts, command=self.run_wireshark)
         self.btn_wireshark.grid(row=0, column=1, padx=5, pady=5)
 
-        self.btn_kismet = tk.Button(self.tools_frame, text="Kismet", width=12, height=2, command=self.run_kismet)
+        self.btn_kismet = tk.Button(self.tools_frame, text="Launch Kismet", **btn_opts, command=self.run_kismet)
         self.btn_kismet.grid(row=1, column=0, columnspan=2, pady=5, sticky="ew")
 
         # Initial check
         self.check_monitor_mode()
 
+    def refresh_interfaces(self):
+        self.interfaces = detect_interfaces()
+        if not self.interfaces:
+            self.status_var.set("No interfaces found.")
+            return
+        
+        # Update OptionMenu
+        menu = self.iface_menu["menu"]
+        menu.delete(0, "end")
+        for iface in self.interfaces:
+            menu.add_command(label=iface, command=lambda v=iface: self.update_interface(v))
+        
+        if self.interface not in self.interfaces:
+            self.interface = self.interfaces[0]
+            self.iface_var.set(self.interface)
+        
+        self.status_var.set("Interfaces refreshed.")
+        self.check_monitor_mode()
+
     def update_interface(self, val):
         self.interface = val
+        self.iface_var.set(val)
         self.check_monitor_mode()
 
     def check_monitor_mode(self):
-        """Checks if any interface is in monitor mode."""
+        """Checks if the selected interface is in monitor mode."""
         try:
-            # Check for common monitor interface names or 'Mode:Monitor' in iwconfig
-            output = subprocess.check_output(["iwconfig"], stderr=subprocess.STDOUT).decode()
+            output = subprocess.check_output(["iwconfig", self.interface], stderr=subprocess.STDOUT).decode()
             if "Mode:Monitor" in output:
-                # If we're looking at a specific interface, see if it's the one in monitor mode
-                # Or just generally check if ANY are. For now, general.
                 self.set_switch_state(True)
             else:
                 self.set_switch_state(False)
         except Exception:
-            # Fallback if iwconfig fails
-            self.set_switch_state(False)
+            # Maybe it's named differently now (e.g. wlan0mon)
+            try:
+                output = subprocess.check_output(["iwconfig"], stderr=subprocess.STDOUT).decode()
+                if f"{self.interface}mon" in output or "Mode:Monitor" in output:
+                     # This is a bit loose but helps detection
+                     self.set_switch_state(True)
+                else:
+                     self.set_switch_state(False)
+            except:
+                self.set_switch_state(False)
 
     def set_switch_state(self, is_on):
         self.is_monitor_on = is_on
@@ -125,18 +176,20 @@ class MonitorGUI:
                 bg="#44ff44", 
                 activebackground="#00cc00",
                 fg="black",
-                activeforeground="black"
+                activeforeground="black",
+                relief="sunken"
             )
-            self.status_var.set(f"Status: Monitor Mode Enabled")
+            self.status_var.set(f"Monitoring enabled on {self.interface}")
         else:
             self.btn_switch.config(
                 text="MONITOR MODE\nOFF", 
                 bg="#ff4444", 
                 activebackground="#cc0000",
                 fg="white",
-                activeforeground="white"
+                activeforeground="white",
+                relief="raised"
             )
-            self.status_var.set("Status: Managed Mode (Monitor Off)")
+            self.status_var.set(f"{self.interface} is in Managed Mode")
 
     def toggle_monitor(self):
         if self.is_monitor_on:
@@ -145,65 +198,60 @@ class MonitorGUI:
             self.enable_monitor()
 
     def run_command(self, cmd_list, description):
-        """Helper to run commands and update status."""
-        self.status_var.set(f"Running: {description}...")
+        logging.info(f"Running: {' '.join(cmd_list)}")
+        self.status_var.set(f"Executing: {description}...")
         self.master.update()
         try:
-            # Note: we use sudo here but ideally the whole app runs as root
-            subprocess.run(cmd_list, check=True)
-            self.status_var.set(f"Success: {description}")
+            subprocess.run(cmd_list, check=True, capture_output=True)
+            self.status_var.set(f"Completed: {description}")
             return True
         except subprocess.CalledProcessError as e:
-            self.status_var.set(f"Error: {description}")
-            messagebox.showerror("Error", f"Failed to run {description}.\nExit code: {e.returncode}")
-            return False
-        except Exception as e:
-            self.status_var.set(f"Error: {description}")
-            messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
+            err_msg = e.stderr.decode() if e.stderr else str(e)
+            logging.error(f"Command failed: {description} - {err_msg}")
+            self.status_var.set(f"Failed: {description}")
+            messagebox.showerror("Error", f"Failed to {description}.\n\n{err_msg}")
             return False
 
     def enable_monitor(self):
-        """Enables monitor mode."""
-        if not messagebox.askyesno("Confirm", f"Enable monitor mode on {self.interface}?\nThis will kill network processes."):
+        if not messagebox.askyesno("Confirm", f"Enable monitor mode on {self.interface}?\n\nThis will disconnect current WiFi connections."):
             return
 
         # Step 1: Kill conflicting processes
-        if not self.run_command(["sudo", "airmon-ng", "check", "kill"], "Kill processes"):
-            if not messagebox.askyesno("Warning", "Failed to kill processes. Continue anyway?"):
+        if not self.run_command(["sudo", "airmon-ng", "check", "kill"], "Kill conflicting processes"):
+            if not messagebox.askyesno("Warning", "Could not kill some processes. Continue?"):
                 return
 
         # Step 2: Start monitor mode
-        if self.run_command(["sudo", "airmon-ng", "start", self.interface], f"Start Monitor Mode on {self.interface}"):
-            self.set_switch_state(True)
-            messagebox.showinfo("Success", f"Monitor mode enabled.")
+        if self.run_command(["sudo", "airmon-ng", "start", self.interface], f"Enable monitor mode on {self.interface}"):
+            self.check_monitor_mode()
+            messagebox.showinfo("Success", f"Monitor mode enabled on {self.interface}.")
 
     def disable_monitor(self):
-        """Disables monitor mode."""
-        if not messagebox.askyesno("Confirm", "Disable monitor mode and restore networks?"):
+        if not messagebox.askyesno("Confirm", "Disable monitor mode and restore networking?"):
             return
         
-        # We pass the interface to the stop script if needed, 
-        # but the current stop script attempts to find wlan1mon or wlan1.
-        if self.run_command(["sudo", "bash", STOP_SCRIPT], "Disable Monitor & Restore"):
-            self.set_switch_state(False)
-            messagebox.showinfo("Success", "Monitor mode disabled. Network restarting...")
-
-    def get_terminal(self):
-        """Finds a suitable terminal emulator."""
-        for t in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]:
-            term = shutil.which(t)
-            if term: return term
-        return None
+        # Use the bundled stop script
+        stop_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop_monitor_mode.sh")
+        if self.run_command(["sudo", "bash", stop_script], "Disable monitor mode"):
+            self.check_monitor_mode()
+            messagebox.showinfo("Success", "Monitor mode disabled. Network services restarted.")
 
     def launch_in_terminal(self, cmd, title):
-        term = self.get_terminal()
+        term = None
+        for t in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]:
+            if shutil.which(t):
+                term = t
+                break
+        
         if not term:
-            messagebox.showerror("Error", "No terminal emulator found.")
+            messagebox.showerror("Error", "No terminal emulator found. Please install xterm or gnome-terminal.")
             return
         
-        full_cmd = [term, "-e", f"sudo {cmd}"]
         try:
-            subprocess.Popen(full_cmd)
+            if term == "gnome-terminal" or term == "konsole":
+                subprocess.Popen([term, "--", "sudo", cmd])
+            else:
+                subprocess.Popen([term, "-e", f"sudo {cmd}"])
             self.status_var.set(f"Launched {title}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch {title}:\n{e}")
@@ -222,24 +270,23 @@ class MonitorGUI:
             messagebox.showerror("Error", f"Failed to launch Wireshark:\n{e}")
 
 def main():
-    # Check for DISPLAY
+    # Verify environment
     if "DISPLAY" not in os.environ:
-        print("Error: No DISPLAY environment variable found.")
-        print("EZMonitorMode is a GUI application and requires a graphical environment.")
-        print("If you are using SSH, ensure you have X11 forwarding enabled (ssh -X).")
-        print("If you are using sudo, try: sudo -E ezmonitormode")
-        sys.exit(1)
+        # Try to guess display if common
+        if os.path.exists("/tmp/.X11-unix/X0"):
+            os.environ["DISPLAY"] = ":0"
+        else:
+            print("Error: No graphical display detected. EZMonitorMode requires a desktop environment.")
+            sys.exit(1)
 
     try:
         root = tk.Tk()
-    except tk.TclError as e:
-        print(f"Error: Could not initialize GUI: {e}")
-        print("Ensure you have a display available and appropriate permissions.")
+        interfaces = detect_interfaces()
+        app = MonitorGUI(root, interfaces)
+        root.mainloop()
+    except Exception as e:
+        print(f"FATAL: {e}")
         sys.exit(1)
-
-    interfaces = detect_interfaces()
-    app = MonitorGUI(root, interfaces)
-    root.mainloop()
 
 if __name__ == "__main__":
     main()

@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch, MagicMock, call
 
 # Add src to path so we can import the module
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from ezmonitormode.monitor_gui import MonitorGUI
 
@@ -20,10 +20,16 @@ class TestMonitorGUI(unittest.TestCase):
         self.tk_patcher = patch('ezmonitormode.monitor_gui.tk')
         self.mock_tk = self.tk_patcher.start()
         
+        self.ttk_patcher = patch('ezmonitormode.monitor_gui.ttk')
+        self.mock_ttk = self.ttk_patcher.start()
+        
         self.msgbox_patcher = patch('ezmonitormode.monitor_gui.messagebox')
         self.mock_msgbox = self.msgbox_patcher.start()
         
         self.mock_root = MagicMock()
+        # Mock winfo_screenwidth/height for center_window
+        self.mock_root.winfo_screenwidth.return_value = 1920
+        self.mock_root.winfo_screenheight.return_value = 1080
         
         # Patch check_monitor_mode to avoid subprocess call in __init__
         with patch.object(MonitorGUI, 'check_monitor_mode'):
@@ -32,6 +38,7 @@ class TestMonitorGUI(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         self.tk_patcher.stop()
+        self.ttk_patcher.stop()
         self.msgbox_patcher.stop()
 
     def test_gui_initialization(self):
@@ -43,23 +50,24 @@ class TestMonitorGUI(unittest.TestCase):
 
     def test_gui_creates_widgets(self):
         """Test that GUI creates expected widgets."""
-        self.mock_root.title.assert_called_with("EZ Monitor Mode 1.1.0")
-        # Check that geometry was set (now 400x500)
-        self.mock_root.geometry.assert_called_with("400x500")
+        from ezmonitormode.monitor_gui import VERSION
+        self.mock_root.title.assert_called_with(f"EZ Monitor Mode {VERSION}")
+        # Check that geometry was set via center_window
+        self.mock_root.geometry.assert_called()
 
-    def test_get_terminal_with_valid_terminal(self):
-        """Test get_terminal returns a terminal when available."""
+    def test_get_terminal_not_needed(self):
+        """Test launch_in_terminal handles missing terminal."""
         with patch('shutil.which') as mock_which:
-            mock_which.return_value = '/usr/bin/x-terminal-emulator'
-            terminal = self.gui.get_terminal()
-            self.assertEqual(terminal, '/usr/bin/x-terminal-emulator')
+            mock_which.return_value = None
+            self.gui.launch_in_terminal("cmd", "Title")
+            self.mock_msgbox.showerror.assert_called()
 
     @patch('subprocess.run')
     def test_run_command_success(self, mock_run):
         """Test run_command with successful execution."""
         result = self.gui.run_command(['echo', 'test'], 'Test Command')
         self.assertTrue(result)
-        mock_run.assert_called_once_with(['echo', 'test'], check=True)
+        mock_run.assert_called_once_with(['echo', 'test'], check=True, capture_output=True)
 
     def test_set_switch_state_on(self):
         """Test UI updates when monitor mode is ON."""

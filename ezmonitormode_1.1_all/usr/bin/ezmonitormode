@@ -1,7 +1,0 @@
-#!/bin/bash
-# Check for sudo/root
-if [ "$EUID" -ne 0 ]; then
-  exec pkexec python3 /usr/share/ezmonitormode/monitor_gui.py "$@"
-else
-  python3 /usr/share/ezmonitormode/monitor_gui.py "$@"
-fi

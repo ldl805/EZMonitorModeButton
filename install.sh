@@ -3,9 +3,9 @@
 echo "Installing dependencies for EZMonitorMode..."
 
 # Core dependencies
-echo "Installing Python3, Tkinter, Aircrack-ng and Wireless Tools..."
+echo "Installing Python3, Tkinter, Aircrack-ng, Wireless Tools, and IW..."
 sudo apt update
-sudo apt install -y python3 python3-tk aircrack-ng wireless-tools
+sudo apt install -y python3 python3-tk aircrack-ng wireless-tools iw
 
 # Optional tools
 echo "Do you want to install the optional tools (wifite, wireshark, kismet)? [y/N]"

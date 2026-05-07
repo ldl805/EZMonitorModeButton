@@ -2,9 +2,11 @@
 
 A simple Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
-## Version 1.1.0 (New!)
-- **Interface Detection:** Automatically detects available wireless interfaces.
-- **Improved Display Handling:** Better support for `sudo` and graphical environments.
+## Version 1.2.0 (New!)
+- **Modern Interface Detection:** Uses `iw` for more reliable hardware detection.
+- **Improved Display Handling:** Enhanced support for `sudo`, `pkexec`, and various graphical environments.
+- **Window Centering:** GUI now centers itself on launch for better UX.
+- **Interface Refresh:** New button to refresh the list of available wireless cards.
 - **Quick Tools:** Shortcuts for Wireshark, Wifite, and Kismet.
 
 ## Installation (Recommended)
@@ -15,7 +17,7 @@ Download the latest `.deb` file from the [Releases](https://github.com/ldl805/EZ
 
 ```bash
 sudo apt update
-sudo apt install ./ezmonitormode_1.1.0_all.deb
+sudo apt install ./ezmonitormode_1.2.0_all.deb
 ```
 
 Once installed, you can launch it from your application menu or by running `ezmonitormode` in the terminal.
@@ -38,7 +40,7 @@ Once installed, run with `sudo -E ezmonitormode`.
 2.  **Install dependencies:**
     ```bash
     sudo apt update
-    sudo apt install python3-tk aircrack-ng wireless-tools
+    sudo apt install python3-tk aircrack-ng wireless-tools iw
     ```
 3.  **Run the application:**
     ```bash

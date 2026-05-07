@@ -1,3 +1,5 @@
 dist/
 __pycache__/
 *.pyc
+*.deb
+ezmonitormode_*_all/

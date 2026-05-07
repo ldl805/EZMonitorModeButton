@@ -7,6 +7,12 @@ echo "Attempting to disable monitor mode..."
 # Detect which interface is currently in monitor mode
 MON_IFACE=$(iwconfig 2>/dev/null | grep "Mode:Monitor" | awk '{print $1}' | head -n 1)
 
+# Check if airmon-ng exists
+if ! command -v airmon-ng >/dev/null 2>&1; then
+    echo "Error: airmon-ng not found. Is aircrack-ng installed?"
+    exit 1
+fi
+
 if [ -n "$MON_IFACE" ]; then
     echo "Found monitor interface: $MON_IFACE"
     echo "Stopping $MON_IFACE..."

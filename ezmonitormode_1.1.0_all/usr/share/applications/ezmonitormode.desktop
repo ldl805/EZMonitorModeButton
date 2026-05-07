@@ -1,9 +1,0 @@
-[Desktop Entry]
-Version=1.1.0
-Name=EZ Monitor Mode
-Comment=Easily switch WiFi to Monitor Mode
-Exec=ezmonitormode
-Icon=network-wireless
-Terminal=false
-Type=Application
-Categories=Utility;Network;Security;
