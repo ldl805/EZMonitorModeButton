@@ -2,6 +2,8 @@
 
 A simple Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
+<img width="400" height="542" alt="guiez" src="https://github.com/user-attachments/assets/dc761ae5-f772-4433-8b1e-be8df376c8b6" />
+
 ## Version 1.2.0 (New!)
 - **Modern Interface Detection:** Uses `iw` for more reliable hardware detection.
 - **Improved Display Handling:** Enhanced support for `sudo`, `pkexec`, and various graphical environments.
