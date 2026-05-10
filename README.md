@@ -1,6 +1,6 @@
 # EZMonitorModeButton
 
-A simple Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
+A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
 <img width="400" height="542" alt="guiez" src="https://github.com/user-attachments/assets/dc761ae5-f772-4433-8b1e-be8df376c8b6" />
 
