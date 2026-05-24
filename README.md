@@ -4,7 +4,7 @@ A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable
 
 
 
-## Version 1.2.0 (New!)
+## Version 1.3.0 (New!)
 *   **Custom Glowing Toggle Switch:** Features a Canvas-based sliding switch flanked by status labels. Both ON and OFF are visible, with only the active state glowing (neon green for ON, bright red for OFF).
 *   **Smooth Non-Freezing GUI:** Ported command executions (`airmon-ng start/stop`) to background threads. The interface stays responsive and updates status messages in real-time during transitions.
 *   **Precise Interface Tracking:** Implemented exact status checking using a custom `iw dev` parser (with `iwconfig` fallback) to eliminate false positive states when multiple wireless adapters are active.
@@ -21,7 +21,7 @@ Download the latest `.deb` file from the [Releases](https://github.com/ldl805/EZ
 
 ```bash
 sudo apt update
-sudo apt install ./ezmonitormode_1.2.0_all.deb
+sudo apt install ./ezmonitormode_1.3.0_all.deb
 ```
 
 Once installed, you can launch it from your application menu or by running `ezmonitormode` in the terminal.
