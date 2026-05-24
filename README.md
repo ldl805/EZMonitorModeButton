@@ -2,7 +2,7 @@
 
 A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
-<img width="400" height="542" alt="guiez" src="https://github.com/user-attachments/assets/dc761ae5-f772-4433-8b1e-be8df376c8b6" />
+
 
 ## Version 1.2.0 (New!)
 *   **Custom Glowing Toggle Switch:** Features a Canvas-based sliding switch flanked by status labels. Both ON and OFF are visible, with only the active state glowing (neon green for ON, bright red for OFF).
