@@ -5,11 +5,13 @@ A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable
 <img width="400" height="542" alt="guiez" src="https://github.com/user-attachments/assets/dc761ae5-f772-4433-8b1e-be8df376c8b6" />
 
 ## Version 1.2.0 (New!)
-- **Modern Interface Detection:** Uses `iw` for more reliable hardware detection.
-- **Improved Display Handling:** Enhanced support for `sudo`, `pkexec`, and various graphical environments.
-- **Window Centering:** GUI now centers itself on launch for better UX.
-- **Interface Refresh:** New button to refresh the list of available wireless cards.
-- **Quick Tools:** Shortcuts for Wireshark, Wifite, and Kismet.
+*   **Custom Glowing Toggle Switch:** Features a Canvas-based sliding switch flanked by status labels. Both ON and OFF are visible, with only the active state glowing (neon green for ON, bright red for OFF).
+*   **Smooth Non-Freezing GUI:** Ported command executions (`airmon-ng start/stop`) to background threads. The interface stays responsive and updates status messages in real-time during transitions.
+*   **Precise Interface Tracking:** Implemented exact status checking using a custom `iw dev` parser (with `iwconfig` fallback) to eliminate false positive states when multiple wireless adapters are active.
+*   **Smart Tool Launcher Validation:** Detects if Wifite, Wireshark, or Kismet are installed. If a tool is missing, its launch button is gracefully disabled and labeled `(N/A)`.
+*   **Slate Dark Theme:** Upgraded to a modern slate/charcoal styling configured via `ttk.Style`.
+*   **Window Centering:** GUI centers itself on launch for better desktop UX.
+*   **Interface Refresh:** Clear button to scan and refresh the list of available wireless cards.
 
 ## Installation (Recommended)
 
