@@ -39,9 +39,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-dists
-          path: |
-            dist/
-            *.deb
+          path: dist/
 
       - name: Upload to GitHub Release
         if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
@@ -67,7 +65,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: release-dists
-          path: .
+          path: dist/
 
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
