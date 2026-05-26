@@ -19,6 +19,8 @@ class TestMonitorGUI(unittest.TestCase):
         # Patch all of tkinter to avoid issues in headless environments
         self.tk_patcher = patch('ezmonitormode.monitor_gui.tk')
         self.mock_tk = self.tk_patcher.start()
+        # Ensure separate calls to tk.Label return distinct mocks
+        self.mock_tk.Label.side_effect = lambda *args, **kwargs: MagicMock()
         
         self.ttk_patcher = patch('ezmonitormode.monitor_gui.ttk')
         self.mock_ttk = self.ttk_patcher.start()
@@ -64,30 +66,29 @@ class TestMonitorGUI(unittest.TestCase):
 
     @patch('subprocess.run')
     def test_run_command_success(self, mock_run):
-        """Test run_command with successful execution."""
-        result = self.gui.run_command(['echo', 'test'], 'Test Command')
-        self.assertTrue(result)
-        mock_run.assert_called_once_with(['echo', 'test'], check=True, capture_output=True)
+        """Test run_command_in_thread with successful execution."""
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_run.return_value = mock_process
+        
+        self.gui.run_command_in_thread(['echo', 'test'], 'Test Command')
+        mock_run.assert_called_once_with(['echo', 'test'], capture_output=True)
 
     def test_set_switch_state_on(self):
         """Test UI updates when monitor mode is ON."""
         self.gui.set_switch_state(True)
         self.assertTrue(self.gui.is_monitor_on)
-        self.gui.btn_switch.config.assert_called()
-        # Verify text was updated to ON
-        last_call_args = self.gui.btn_switch.config.call_args[1]
-        self.assertIn("ON", last_call_args['text'])
-        self.assertEqual(last_call_args['bg'], "#44ff44")
+        self.assertTrue(self.gui.toggle_widget.is_on)
+        self.gui.lbl_on.config.assert_called_with(fg="#39ff14")
+        self.gui.lbl_off.config.assert_called_with(fg="#502020")
 
     def test_set_switch_state_off(self):
         """Test UI updates when monitor mode is OFF."""
         self.gui.set_switch_state(False)
         self.assertFalse(self.gui.is_monitor_on)
-        self.gui.btn_switch.config.assert_called()
-        # Verify text was updated to OFF
-        last_call_args = self.gui.btn_switch.config.call_args[1]
-        self.assertIn("OFF", last_call_args['text'])
-        self.assertEqual(last_call_args['bg'], "#ff4444")
+        self.assertFalse(self.gui.toggle_widget.is_on)
+        self.gui.lbl_off.config.assert_called_with(fg="#ff1744")
+        self.gui.lbl_on.config.assert_called_with(fg="#204020")
 
     def test_toggle_monitor_calls_enable(self):
         """Test toggle calls enable when off."""
