@@ -12,7 +12,7 @@ import threading
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 
 def get_interfaces_status():
     """Detects wireless interfaces and maps them to their mode ('managed', 'monitor')."""
@@ -213,14 +213,28 @@ class MonitorGUI:
         )
         self.status_label.pack(pady=12)
 
+        # Toggle Tools Button
+        self.tools_visible = True
+        self.btn_toggle_tools = ttk.Button(
+            master, 
+            text="Hide Quick Tools ▲", 
+            command=self.toggle_tools_section,
+            width=20
+        )
+        self.btn_toggle_tools.pack(pady=5)
+
+        # Tools Container (collapsible)
+        self.tools_container = ttk.Frame(master)
+        self.tools_container.pack(fill="x", pady=5)
+
         # Tools Section
-        separator = ttk.Separator(master, orient='horizontal')
+        separator = ttk.Separator(self.tools_container, orient='horizontal')
         separator.pack(fill='x', padx=20, pady=5)
 
-        lbl_tools = ttk.Label(master, text="Quick Tools", font=("Helvetica", 12, "bold"))
+        lbl_tools = ttk.Label(self.tools_container, text="Quick Tools", font=("Helvetica", 12, "bold"))
         lbl_tools.pack(pady=5)
 
-        self.tools_frame = ttk.Frame(master)
+        self.tools_frame = ttk.Frame(self.tools_container)
         self.tools_frame.pack(pady=5)
 
         self.btn_wifite = ttk.Button(self.tools_frame, text="Launch Wifite", width=18, command=self.run_wifite)
@@ -266,6 +280,19 @@ class MonitorGUI:
             foreground=[('active', '#ffffff'), ('disabled', '#777777')],
             bordercolor=[('disabled', '#252525')]
         )
+
+    def toggle_tools_section(self):
+        """Toggles the visibility of the tools section and resizes the window."""
+        if self.tools_visible:
+            self.tools_container.pack_forget()
+            self.btn_toggle_tools.config(text="Show Quick Tools ▼")
+            self.tools_visible = False
+            self.master.geometry("420x290")
+        else:
+            self.tools_container.pack(fill="x", pady=5)
+            self.btn_toggle_tools.config(text="Hide Quick Tools ▲")
+            self.tools_visible = True
+            self.master.geometry("420x500")
 
     def check_tools_availability(self):
         """Verifies if the security utilities are installed on the system."""

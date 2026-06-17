@@ -104,6 +104,25 @@ class TestMonitorGUI(unittest.TestCase):
             self.gui.toggle_monitor()
             mock_disable.assert_called_once()
 
+    def test_toggle_tools_section(self):
+        """Test toggling the tools section visibility and geometry."""
+        # Initially, tools should be visible
+        self.assertTrue(self.gui.tools_visible)
+        
+        # Collapse tools
+        self.gui.toggle_tools_section()
+        self.assertFalse(self.gui.tools_visible)
+        self.gui.tools_container.pack_forget.assert_called_once()
+        self.gui.btn_toggle_tools.config.assert_called_with(text="Show Quick Tools ▼")
+        self.mock_root.geometry.assert_called_with("420x290")
+        
+        # Expand tools
+        self.gui.toggle_tools_section()
+        self.assertTrue(self.gui.tools_visible)
+        self.gui.tools_container.pack.assert_called_with(fill="x", pady=5)
+        self.gui.btn_toggle_tools.config.assert_called_with(text="Hide Quick Tools ▲")
+        self.mock_root.geometry.assert_called_with("420x500")
+
 
 if __name__ == '__main__':
     unittest.main()
