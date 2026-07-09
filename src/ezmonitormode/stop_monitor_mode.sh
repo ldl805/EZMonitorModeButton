@@ -4,8 +4,18 @@
 
 echo "Attempting to disable monitor mode..."
 
-# Detect which interface is currently in monitor mode
-MON_IFACE=$(iwconfig 2>/dev/null | grep "Mode:Monitor" | awk '{print $1}' | head -n 1)
+# Detect target interface from argument or auto-detect first monitor mode interface
+TARGET_IFACE="$1"
+
+if [ -n "$TARGET_IFACE" ]; then
+    MON_IFACE="$TARGET_IFACE"
+    # If the user passed wlan0 but only wlan0mon exists, help resolve it
+    if ! iwconfig "$MON_IFACE" 2>/dev/null | grep -q "Mode:Monitor" && iwconfig "${MON_IFACE}mon" 2>/dev/null | grep -q "Mode:Monitor"; then
+        MON_IFACE="${MON_IFACE}mon"
+    fi
+else
+    MON_IFACE=$(iwconfig 2>/dev/null | grep "Mode:Monitor" | awk '{print $1}' | head -n 1)
+fi
 
 # Check if airmon-ng exists
 if ! command -v airmon-ng >/dev/null 2>&1; then
@@ -27,7 +37,7 @@ else
 fi
 
 echo "Restarting network services..."
-...
+
 # Restart NetworkManager (manages connections)
 if systemctl list-unit-files | grep -q NetworkManager; then
     echo "Restarting NetworkManager..."
@@ -44,6 +54,12 @@ fi
 if systemctl list-unit-files | grep -q avahi-daemon; then
     echo "Restarting avahi-daemon..."
     sudo systemctl restart avahi-daemon
+fi
+
+# Restart dhcpcd if present (for legacy/alternative Raspberry Pi installations)
+if systemctl list-unit-files | grep -q dhcpcd; then
+    echo "Restarting dhcpcd..."
+    sudo systemctl restart dhcpcd
 fi
 
 echo "Monitor mode disabled and services restoration requested."

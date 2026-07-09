@@ -12,7 +12,7 @@ import threading
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 def get_interfaces_status():
     """Detects wireless interfaces and maps them to their mode ('managed', 'monitor')."""
@@ -79,9 +79,13 @@ class CanvasToggle(tk.Canvas):
         self.height = height
         self.callback = callback
         self.is_on = False
+        self.is_hovered = False
+        self.config(cursor="hand2")
         
         self.draw_widget()
         self.bind("<Button-1>", self.on_click)
+        self.bind("<Enter>", self.on_enter)
+        self.bind("<Leave>", self.on_leave)
         
     def draw_widget(self):
         self.delete("all")
@@ -109,7 +113,9 @@ class CanvasToggle(tk.Canvas):
         
         # Draw circular knob
         knob_r = radius - 2
-        self.create_oval(knob_x - knob_r, y1 + 2, knob_x + knob_r, y2 - 2, fill=knob_color, outline="#ffffff", width=1)
+        outline_color = "#ffffff" if self.is_hovered else "#d0d0d0"
+        outline_width = 2 if self.is_hovered else 1
+        self.create_oval(knob_x - knob_r, y1 + 2, knob_x + knob_r, y2 - 2, fill=knob_color, outline=outline_color, width=outline_width)
         
     def set_state(self, is_on):
         if self.is_on != is_on:
@@ -119,6 +125,14 @@ class CanvasToggle(tk.Canvas):
     def on_click(self, event):
         if self.callback:
             self.callback()
+
+    def on_enter(self, event):
+        self.is_hovered = True
+        self.draw_widget()
+
+    def on_leave(self, event):
+        self.is_hovered = False
+        self.draw_widget()
 
 class MonitorGUI:
     def __init__(self, master, interfaces):
@@ -145,8 +159,9 @@ class MonitorGUI:
         lbl_iface = ttk.Label(iface_frame, text="Wireless Interface:", font=("Helvetica", 10, "bold"))
         lbl_iface.pack(side="left", pady=5)
         
+        self.iface_var = tk.StringVar()
         if self.interfaces:
-            self.iface_var = tk.StringVar(value=self.interface)
+            self.iface_var.set(self.interface)
             self.iface_menu = ttk.OptionMenu(
                 iface_frame, 
                 self.iface_var, 
@@ -154,11 +169,18 @@ class MonitorGUI:
                 *self.interfaces, 
                 command=self.update_interface
             )
-            self.iface_menu.pack(side="left", fill="x", expand=True, padx=8)
         else:
-            lbl_err = ttk.Label(iface_frame, text="No interfaces found!", foreground="#e53935")
-            lbl_err.pack(side="left", padx=8)
-            self.iface_menu = ttk.Frame(iface_frame) # placeholder to avoid AttributeError
+            self.iface_var.set("None Found")
+            self.iface_menu = ttk.OptionMenu(
+                iface_frame,
+                self.iface_var,
+                "None Found",
+                "None Found",
+                command=self.update_interface
+            )
+            self.iface_menu.config(state="disabled")
+            
+        self.iface_menu.pack(side="left", fill="x", expand=True, padx=8)
 
         self.btn_refresh = ttk.Button(iface_frame, text="↻", width=3, command=self.refresh_interfaces)
         self.btn_refresh.pack(side="right")
@@ -175,7 +197,8 @@ class MonitorGUI:
             toggle_container, 
             text="OFF", 
             font=("Helvetica", 16, "bold"),
-            bg="#1a1a1a"
+            bg="#1a1a1a",
+            cursor="hand2"
         )
         self.lbl_off.pack(side="left", padx=15)
 
@@ -191,7 +214,8 @@ class MonitorGUI:
             toggle_container, 
             text="ON", 
             font=("Helvetica", 16, "bold"),
-            bg="#1a1a1a"
+            bg="#1a1a1a",
+            cursor="hand2"
         )
         self.lbl_on.pack(side="left", padx=15)
 
@@ -322,6 +346,8 @@ class MonitorGUI:
         self.interfaces = detect_interfaces()
         if not self.interfaces:
             self.status_var.set("No wireless interfaces found.")
+            self.iface_var.set("None Found")
+            self.iface_menu.config(state="disabled")
             return
         
         # Re-build OptionMenu menu items
@@ -330,8 +356,11 @@ class MonitorGUI:
         for iface in self.interfaces:
             menu.add_command(label=iface, command=lambda v=iface: self.update_interface(v))
         
+        self.iface_menu.config(state="normal")
         if self.interface not in self.interfaces:
             self.interface = self.interfaces[0]
+            self.iface_var.set(self.interface)
+        else:
             self.iface_var.set(self.interface)
         
         self.status_var.set("Interfaces refreshed.")
@@ -416,7 +445,7 @@ class MonitorGUI:
     def _run_disable_monitor(self):
         try:
             stop_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop_monitor_mode.sh")
-            self.run_command_in_thread(["sudo", "bash", stop_script], "Disable monitor mode")
+            self.run_command_in_thread(["sudo", "bash", stop_script, self.interface], "Disable monitor mode")
             
             self.master.after(0, lambda: messagebox.showinfo("Success", "Monitor mode disabled. Network services restarted."))
         except Exception as e:
@@ -430,7 +459,7 @@ class MonitorGUI:
         
         result = subprocess.run(cmd_list, capture_output=True)
         if result.returncode != 0:
-            err_msg = result.stderr.decode().strip() if result.stderr else "Unknown error"
+            err_msg = result.stderr.decode(errors='replace').strip() if result.stderr else "Unknown error"
             raise RuntimeError(f"{description} failed (Code {result.returncode}).\n{err_msg}")
             
         self.master.after(0, lambda: self.status_var.set(f"Completed: {description}"))
@@ -452,11 +481,31 @@ class MonitorGUI:
             messagebox.showerror("Error", "No terminal emulator found. Please install xterm or gnome-terminal.")
             return
         
+        # Identify original non-root user if running elevated via sudo/pkexec
+        user = os.environ.get("SUDO_USER")
+        if not user and os.environ.get("PKEXEC_UID"):
+            try:
+                import pwd
+                user = pwd.getpwuid(int(os.environ.get("PKEXEC_UID"))).pw_name
+            except Exception:
+                pass
+                
         try:
             if term in ["gnome-terminal", "konsole"]:
-                subprocess.Popen([term, "--", "sudo", cmd])
+                term_cmd = [term, "--", "sudo", cmd]
             else:
-                subprocess.Popen([term, "-e", f"sudo {cmd}"])
+                term_cmd = [term, "-e", f"sudo {cmd}"]
+                
+            if user and os.geteuid() == 0:
+                # Spawn terminal emulator as non-root user with desktop environments preserved
+                display = os.environ.get("DISPLAY", ":0")
+                xauth = os.environ.get("XAUTHORITY", "")
+                env_args = [f"DISPLAY={display}"]
+                if xauth:
+                    env_args.append(f"XAUTHORITY={xauth}")
+                term_cmd = ["sudo", "-u", user, "env"] + env_args + term_cmd
+                
+            subprocess.Popen(term_cmd)
             self.status_var.set(f"Launched {title}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch {title}:\n{e}")
