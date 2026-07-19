@@ -12,7 +12,7 @@ A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable
          While entering monitor mode is easy, exiting it can be tedious and frustrating:
 
         • The Annoyance: When  airmon-ng check kill  runs, it completely destroys the system's normal internet connectivity. To get back online, a user has to stop monitor mode and manually restart all networking services in the correct sequence.
-        • How EZMonitorModeButton solves this: This program automatically stops the monitor interface and sequentially restarts  NetworkManager ,  wpa_supplicant ,  avahi-daemon , and  dhcpcd .
+        • How EZMonitorModeButton solves this: This program automatically stops the monitor interface and sequentially restarts  NetworkManager, wpa_supplicant, avahi-daemon,and dhcpcd .
         • The Value: It acts as a safety net. Instead of leaving the user with broken internet, a single click restores normal network state cleanly.
 
 
