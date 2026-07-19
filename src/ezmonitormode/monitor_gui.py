@@ -12,7 +12,7 @@ import threading
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 
 def get_interfaces_status():
     """Detects wireless interfaces and maps them to their mode ('managed', 'monitor')."""
@@ -20,7 +20,7 @@ def get_interfaces_status():
     
     # Try 'iw dev' first (modern standard)
     try:
-        output = subprocess.check_output(["iw", "dev"], stderr=subprocess.STDOUT).decode()
+        output = subprocess.check_output(["iw", "dev"], stderr=subprocess.STDOUT, timeout=5).decode()
         current_iface = None
         for line in output.split("\n"):
             line = line.strip()
@@ -29,10 +29,10 @@ def get_interfaces_status():
                 status[current_iface] = "managed" # default fallback
             elif line.startswith("type ") and current_iface:
                 status[current_iface] = line.split()[1]
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.SubprocessError, FileNotFoundError):
         # Fallback to 'iwconfig'
         try:
-            output = subprocess.check_output(["iwconfig"], stderr=subprocess.STDOUT).decode()
+            output = subprocess.check_output(["iwconfig"], stderr=subprocess.STDOUT, timeout=5).decode()
             current_iface = None
             for line in output.split("\n"):
                 if not line:
@@ -323,6 +323,7 @@ class MonitorGUI:
         self.wifite_available = shutil.which("wifite") is not None
         self.wireshark_available = shutil.which("wireshark") is not None
         self.kismet_available = shutil.which("kismet") is not None
+        self.airmon_ng_available = shutil.which("airmon-ng") is not None
         
         if self.wifite_available:
             self.btn_wifite.config(state="normal", text="Launch Wifite")
@@ -373,6 +374,11 @@ class MonitorGUI:
 
     def check_monitor_mode(self):
         """Checks if the interface or its mon counterpart is in monitor mode."""
+        if not self.airmon_ng_available:
+            self.set_switch_state(False)
+            self.status_var.set("Error: airmon-ng not found. Please install aircrack-ng.")
+            return
+
         status = get_interfaces_status()
         
         if status.get(self.interface) == "monitor":
@@ -381,6 +387,26 @@ class MonitorGUI:
             self.set_switch_state(True)
         else:
             self.set_switch_state(False)
+
+    def get_active_monitor_interface(self):
+        """Finds the actual interface name in monitor mode for the selected base interface."""
+        status = get_interfaces_status()
+        if status.get(self.interface) == "monitor":
+            return self.interface
+            
+        possible_names = [
+            f"{self.interface}mon",
+            f"{self.interface}.mon",
+            f"mon{self.interface}",
+        ]
+        for name in possible_names:
+            if status.get(name) == "monitor":
+                return name
+                
+        for iface, mode in status.items():
+            if mode == "monitor" and (self.interface in iface or iface.startswith("mon")):
+                return iface
+        return None
 
     def set_switch_state(self, is_on):
         self.is_monitor_on = is_on
@@ -397,6 +423,10 @@ class MonitorGUI:
 
     def toggle_monitor(self):
         if self.is_transitioning:
+            return
+            
+        if not self.airmon_ng_available:
+            messagebox.showerror("Dependency Error", "airmon-ng is not installed.\n\nPlease install aircrack-ng:\nsudo apt install aircrack-ng")
             return
             
         if self.is_monitor_on:
@@ -457,10 +487,13 @@ class MonitorGUI:
         logging.info(f"Running: {' '.join(cmd_list)}")
         self.master.after(0, lambda: self.status_var.set(f"Executing: {description}..."))
         
-        result = subprocess.run(cmd_list, capture_output=True)
-        if result.returncode != 0:
-            err_msg = result.stderr.decode(errors='replace').strip() if result.stderr else "Unknown error"
-            raise RuntimeError(f"{description} failed (Code {result.returncode}).\n{err_msg}")
+        try:
+            result = subprocess.run(cmd_list, capture_output=True, timeout=30)
+            if result.returncode != 0:
+                err_msg = result.stderr.decode(errors='replace').strip() if result.stderr else "Unknown error"
+                raise RuntimeError(f"{description} failed (Code {result.returncode}).\n{err_msg}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"{description} timed out after 30 seconds.")
             
         self.master.after(0, lambda: self.status_var.set(f"Completed: {description}"))
 
@@ -511,14 +544,20 @@ class MonitorGUI:
             messagebox.showerror("Error", f"Failed to launch {title}:\n{e}")
 
     def run_wifite(self):
-        self.launch_in_terminal("wifite", "Wifite")
-
+        mon_iface = self.get_active_monitor_interface()
+        cmd = f"wifite -i {mon_iface}" if mon_iface else "wifite"
+        self.launch_in_terminal(cmd, "Wifite")
+ 
     def run_kismet(self):
-        self.launch_in_terminal("kismet", "Kismet")
-
+        mon_iface = self.get_active_monitor_interface()
+        cmd = f"kismet -c {mon_iface}" if mon_iface else "kismet"
+        self.launch_in_terminal(cmd, "Kismet")
+ 
     def run_wireshark(self):
         try:
-            subprocess.Popen(["sudo", "wireshark"])
+            mon_iface = self.get_active_monitor_interface()
+            cmd_args = ["sudo", "wireshark", "-i", mon_iface] if mon_iface else ["sudo", "wireshark"]
+            subprocess.Popen(cmd_args)
             self.status_var.set("Launched Wireshark")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch Wireshark:\n{e}")

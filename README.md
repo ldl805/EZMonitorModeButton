@@ -53,7 +53,12 @@ A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable
     ⋮     
 
 
-## Version 1.4.1 (New!)
+## Version 1.4.2 (New!)
+*   **Subprocess Timeout Safeguards:** Protects GUI thread from freezing if a wireless driver hangs.
+*   **Smart Interface Injection:** Automatically passes target monitor interfaces to Wireshark (`-i`), Wifite (`-i`), and Kismet (`-c`).
+*   **Robust Dependency Guard:** Gracefully warns and disables action if the `airmon-ng` suite is missing.
+
+## Version 1.4.1
 *   **Targeted Interface Disabling:** Stop scripts now target specific monitor interfaces rather than alphabetically first.
 *   **Crash Safeguards:** Fixed a GUI refresh crash when started with no adapters connected, and added safe Unicode error decoding.
 *   **Legacy OS Compatibility:** Restores `dhcpcd` networking services on legacy Pi OS installations.
@@ -78,7 +83,7 @@ Download the latest `.deb` file from the [Releases](https://github.com/ldl805/EZ
 
 ```bash
 sudo apt update
-sudo apt install ./ezmonitormode_1.4.1_all.deb
+sudo apt install ./ezmonitormode_1.4.2_all.deb
 ```
 
 Once installed, you can launch it from your application menu or by running `ezmonitormode` in the terminal.

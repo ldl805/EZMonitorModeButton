@@ -36,6 +36,7 @@ class TestMonitorGUI(unittest.TestCase):
         # Patch check_monitor_mode to avoid subprocess call in __init__
         with patch.object(MonitorGUI, 'check_monitor_mode'):
             self.gui = MonitorGUI(self.mock_root, ["wlan0", "wlan1"])
+            self.gui.airmon_ng_available = True
 
     def tearDown(self):
         """Clean up test fixtures."""
@@ -72,7 +73,18 @@ class TestMonitorGUI(unittest.TestCase):
         mock_run.return_value = mock_process
         
         self.gui.run_command_in_thread(['echo', 'test'], 'Test Command')
-        mock_run.assert_called_once_with(['echo', 'test'], capture_output=True)
+        mock_run.assert_called_once_with(['echo', 'test'], capture_output=True, timeout=30)
+
+    @patch('subprocess.run')
+    def test_run_command_timeout(self, mock_run):
+        """Test run_command_in_thread handles subprocess timeout."""
+        import subprocess
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd=['echo', 'test'], timeout=30)
+        
+        with self.assertRaises(RuntimeError) as ctx:
+            self.gui.run_command_in_thread(['echo', 'test'], 'Test Command')
+        
+        self.assertIn("timed out after 30 seconds", str(ctx.exception))
 
     def test_set_switch_state_on(self):
         """Test UI updates when monitor mode is ON."""
@@ -100,9 +112,31 @@ class TestMonitorGUI(unittest.TestCase):
     def test_toggle_monitor_calls_disable(self):
         """Test toggle calls disable when on."""
         self.gui.is_monitor_on = True
+        self.gui.airmon_ng_available = True
         with patch.object(self.gui, 'disable_monitor') as mock_disable:
             self.gui.toggle_monitor()
             mock_disable.assert_called_once()
+
+    def test_toggle_monitor_no_airmon_ng(self):
+        """Test toggle monitor fails gracefully when airmon-ng is not installed."""
+        self.gui.airmon_ng_available = False
+        with patch.object(self.gui, 'enable_monitor') as mock_enable, \
+             patch.object(self.gui, 'disable_monitor') as mock_disable:
+            self.gui.toggle_monitor()
+            mock_enable.assert_not_called()
+            mock_disable.assert_not_called()
+            self.mock_msgbox.showerror.assert_called_once_with(
+                "Dependency Error",
+                "airmon-ng is not installed.\n\nPlease install aircrack-ng:\nsudo apt install aircrack-ng"
+            )
+
+    def test_check_monitor_mode_no_airmon_ng(self):
+        """Test check_monitor_mode sets status warning when airmon-ng is missing."""
+        self.gui.airmon_ng_available = False
+        
+        self.gui.check_monitor_mode()
+        self.gui.status_var.set.assert_called_with("Error: airmon-ng not found. Please install aircrack-ng.")
+        self.assertFalse(self.gui.is_monitor_on)
 
     def test_toggle_tools_section(self):
         """Test toggling the tools section visibility and geometry."""
@@ -122,6 +156,59 @@ class TestMonitorGUI(unittest.TestCase):
         self.gui.tools_container.pack.assert_called_with(fill="x", pady=5)
         self.gui.btn_toggle_tools.config.assert_called_with(text="Hide Quick Tools ▲")
         self.mock_root.geometry.assert_called_with("420x500")
+
+    @patch('ezmonitormode.monitor_gui.get_interfaces_status')
+    def test_get_active_monitor_interface_direct(self, mock_status):
+        """Test get_active_monitor_interface when the base interface itself is in monitor mode."""
+        self.gui.interface = "wlan0"
+        mock_status.return_value = {"wlan0": "monitor"}
+        self.assertEqual(self.gui.get_active_monitor_interface(), "wlan0")
+
+    @patch('ezmonitormode.monitor_gui.get_interfaces_status')
+    def test_get_active_monitor_interface_suffix(self, mock_status):
+        """Test get_active_monitor_interface when suffix interface (e.g. wlan0mon) is in monitor mode."""
+        self.gui.interface = "wlan0"
+        mock_status.return_value = {"wlan0": "managed", "wlan0mon": "monitor"}
+        self.assertEqual(self.gui.get_active_monitor_interface(), "wlan0mon")
+
+    @patch('ezmonitormode.monitor_gui.get_interfaces_status')
+    def test_get_active_monitor_interface_none(self, mock_status):
+        """Test get_active_monitor_interface when no interface is in monitor mode."""
+        self.gui.interface = "wlan0"
+        mock_status.return_value = {"wlan0": "managed", "wlan1": "managed"}
+        self.assertIsNone(self.gui.get_active_monitor_interface())
+
+    @patch.object(MonitorGUI, 'get_active_monitor_interface')
+    @patch.object(MonitorGUI, 'launch_in_terminal')
+    def test_run_wifite_with_interface(self, mock_launch, mock_get_mon):
+        """Test run_wifite injects interface argument when active."""
+        mock_get_mon.return_value = "wlan0mon"
+        self.gui.run_wifite()
+        mock_launch.assert_called_once_with("wifite -i wlan0mon", "Wifite")
+
+    @patch.object(MonitorGUI, 'get_active_monitor_interface')
+    @patch.object(MonitorGUI, 'launch_in_terminal')
+    def test_run_wifite_without_interface(self, mock_launch, mock_get_mon):
+        """Test run_wifite falls back to standard command when no active monitor interface."""
+        mock_get_mon.return_value = None
+        self.gui.run_wifite()
+        mock_launch.assert_called_once_with("wifite", "Wifite")
+
+    @patch.object(MonitorGUI, 'get_active_monitor_interface')
+    @patch('subprocess.Popen')
+    def test_run_wireshark_with_interface(self, mock_popen, mock_get_mon):
+        """Test run_wireshark injects interface argument when active."""
+        mock_get_mon.return_value = "wlan0mon"
+        self.gui.run_wireshark()
+        mock_popen.assert_called_once_with(["sudo", "wireshark", "-i", "wlan0mon"])
+
+    @patch.object(MonitorGUI, 'get_active_monitor_interface')
+    @patch('subprocess.Popen')
+    def test_run_wireshark_without_interface(self, mock_popen, mock_get_mon):
+        """Test run_wireshark falls back to standard command when no active monitor interface."""
+        mock_get_mon.return_value = None
+        self.gui.run_wireshark()
+        mock_popen.assert_called_once_with(["sudo", "wireshark"])
 
 
 if __name__ == '__main__':
