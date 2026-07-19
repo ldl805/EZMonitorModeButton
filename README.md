@@ -3,6 +3,55 @@
 A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
 <img width="384" height="197" alt="guiez" src="https://repository-images.githubusercontent.com/1140614965/7aa3f1f6-befa-4039-afb9-df3dae1b58b8" />
+  
+       In wireless security auditing, the standard way to enable monitor mode is using the  aircrack-ng  suite:
+
+        1.  sudo airmon-ng check kill  (kills network managers,  wpa_supplicant ,  dhcpcd , etc.)
+        2.  sudo airmon-ng start wlan0 
+    
+         While entering monitor mode is easy, exiting it can be tedious and frustrating:
+
+        • The Annoyance: When  airmon-ng check kill  runs, it completely destroys the system's normal internet connectivity. To get back online, a user has to stop monitor mode and manually restart all networking services in the correct sequence.
+        • How EZMonitorModeButton solves this: This program automatically stops the monitor interface and sequentially restarts  NetworkManager ,  wpa_supplicant ,  avahi-daemon , and  dhcpcd .
+        • The Value: It acts as a safety net. Instead of leaving the user with broken internet, a single click restores normal network state cleanly.
+
+
+              ┌────────────────┐
+    ⋮         │ Start Auditing │
+    ⋮         └────────────────┘
+    ⋮                  │
+    ⋮                  ▼
+    ⋮         ◇───────────────◇
+    ⋮         │ Choose Method │
+    ⋮         ◇───────────────◇
+    ⋮                 │ Command Line                      EZMONITORMODEBUTTON
+    ⋮                 ▼
+    ⋮         ┌────────────────────────────────┐    ┌──────────────────────┐
+    ⋮         │ Type sudo airmon-ng check kill │    │ Click Glow Switch ON │
+    ⋮         └────────────────────────────────┘    └──────────────────────┘
+    ⋮                          │
+    ⋮                          ▼
+    ⋮         ┌─────────────────────────────────┐
+    ⋮         │ Type sudo airmon-ng start wlan0 │
+    ⋮         └─────────────────────────────────┘
+    ⋮                          │
+    ⋮                          ▼
+    ⋮         ┌────────────────────┐
+    ⋮         │ Auditing Completed │
+    ⋮         └────────────────────┘
+    ⋮                    │ Manual Cleanup
+    ⋮                    ▼
+    ⋮         ┌────────────────────────────────────────────────────────────┐    ┌───────────────────────┐
+    ⋮         │ Type stop commands + restart NetworkManager/wpa_supplicant │    │ Click Glow Switch OFF │
+    ⋮         └────────────────────────────────────────────────────────────┘    └───────────────────────┘
+    ⋮                                                                                       │
+    ⋮                                                                                       ▼
+    ⋮         ┌─────────────────────────────────┐
+    ⋮         │ Internet Restored Automatically │
+    ⋮         └─────────────────────────────────┘
+    ⋮
+    ⋮     
+
 
 ## Version 1.4.1 (New!)
 *   **Targeted Interface Disabling:** Stop scripts now target specific monitor interfaces rather than alphabetically first.
