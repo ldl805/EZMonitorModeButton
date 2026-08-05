@@ -13,7 +13,7 @@ import time
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 def get_interfaces_status():
     """Detects wireless interfaces and maps them to their mode ('managed', 'monitor')."""
