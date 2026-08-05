@@ -4,17 +4,55 @@
 
 echo "Attempting to disable monitor mode..."
 
+# Helper function to test if an interface is in monitor mode
+is_monitor_mode() {
+    local iface="$1"
+    [ -z "$iface" ] && return 1
+    if command -v iw >/dev/null 2>&1; then
+        iw dev "$iface" info 2>/dev/null | grep -q "type monitor" && return 0
+    fi
+    if command -v iwconfig >/dev/null 2>&1; then
+        iwconfig "$iface" 2>/dev/null | grep -q "Mode:Monitor" && return 0
+    fi
+    return 1
+}
+
+# Helper function to auto-detect any active monitor mode interface
+find_any_monitor_iface() {
+    if command -v iw >/dev/null 2>&1; then
+        local mon_if
+        mon_if=$(iw dev 2>/dev/null | awk '/Interface/ {iface=$2} /type monitor/ {print iface}')
+        if [ -n "$mon_if" ]; then
+            echo "$mon_if" | head -n 1
+            return 0
+        fi
+    fi
+    if command -v iwconfig >/dev/null 2>&1; then
+        local mon_if
+        mon_if=$(iwconfig 2>/dev/null | grep "Mode:Monitor" | awk '{print $1}' | head -n 1)
+        if [ -n "$mon_if" ]; then
+            echo "$mon_if"
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Detect target interface from argument or auto-detect first monitor mode interface
 TARGET_IFACE="$1"
 
 if [ -n "$TARGET_IFACE" ]; then
-    MON_IFACE="$TARGET_IFACE"
-    # If the user passed wlan0 but only wlan0mon exists, help resolve it
-    if ! iwconfig "$MON_IFACE" 2>/dev/null | grep -q "Mode:Monitor" && iwconfig "${MON_IFACE}mon" 2>/dev/null | grep -q "Mode:Monitor"; then
-        MON_IFACE="${MON_IFACE}mon"
+    if is_monitor_mode "$TARGET_IFACE"; then
+        MON_IFACE="$TARGET_IFACE"
+    elif is_monitor_mode "${TARGET_IFACE}mon"; then
+        MON_IFACE="${TARGET_IFACE}mon"
+    elif is_monitor_mode "mon${TARGET_IFACE}"; then
+        MON_IFACE="mon${TARGET_IFACE}"
+    else
+        MON_IFACE="$TARGET_IFACE"
     fi
 else
-    MON_IFACE=$(iwconfig 2>/dev/null | grep "Mode:Monitor" | awk '{print $1}' | head -n 1)
+    MON_IFACE=$(find_any_monitor_iface)
 fi
 
 # Check if airmon-ng exists
@@ -28,7 +66,7 @@ if [ -n "$MON_IFACE" ]; then
     echo "Stopping $MON_IFACE..."
     sudo airmon-ng stop "$MON_IFACE"
 else
-    echo "No interface in monitor mode detected via iwconfig."
+    echo "No interface in monitor mode detected."
     echo "Attempting fallback airmon-ng stop on common names..."
     sudo airmon-ng stop wlan0mon >/dev/null 2>&1
     sudo airmon-ng stop wlan1mon >/dev/null 2>&1

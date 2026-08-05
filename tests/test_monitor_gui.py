@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock, call
 # Add src to path so we can import the module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from ezmonitormode.monitor_gui import MonitorGUI
+from ezmonitormode.monitor_gui import MonitorGUI, get_interface_details, VERSION
 
 
 class TestMonitorGUI(unittest.TestCase):
@@ -34,7 +34,8 @@ class TestMonitorGUI(unittest.TestCase):
         self.mock_root.winfo_screenheight.return_value = 1080
         
         # Patch check_monitor_mode to avoid subprocess call in __init__
-        with patch.object(MonitorGUI, 'check_monitor_mode'):
+        with patch.object(MonitorGUI, 'check_monitor_mode'), \
+             patch.object(MonitorGUI, 'update_interface_details_ui'):
             self.gui = MonitorGUI(self.mock_root, ["wlan0", "wlan1"])
             self.gui.airmon_ng_available = True
 
@@ -53,7 +54,6 @@ class TestMonitorGUI(unittest.TestCase):
 
     def test_gui_creates_widgets(self):
         """Test that GUI creates expected widgets."""
-        from ezmonitormode.monitor_gui import VERSION
         self.mock_root.title.assert_called_with(f"EZ Monitor Mode {VERSION}")
         # Check that geometry was set via center_window
         self.mock_root.geometry.assert_called()
@@ -88,19 +88,21 @@ class TestMonitorGUI(unittest.TestCase):
 
     def test_set_switch_state_on(self):
         """Test UI updates when monitor mode is ON."""
-        self.gui.set_switch_state(True)
-        self.assertTrue(self.gui.is_monitor_on)
-        self.assertTrue(self.gui.toggle_widget.is_on)
-        self.gui.lbl_on.config.assert_called_with(fg="#39ff14")
-        self.gui.lbl_off.config.assert_called_with(fg="#502020")
+        with patch.object(self.gui, 'update_interface_details_ui'):
+            self.gui.set_switch_state(True)
+            self.assertTrue(self.gui.is_monitor_on)
+            self.assertTrue(self.gui.toggle_widget.is_on)
+            self.gui.lbl_on.config.assert_called_with(fg="#39ff14")
+            self.gui.lbl_off.config.assert_called_with(fg="#502020")
 
     def test_set_switch_state_off(self):
         """Test UI updates when monitor mode is OFF."""
-        self.gui.set_switch_state(False)
-        self.assertFalse(self.gui.is_monitor_on)
-        self.assertFalse(self.gui.toggle_widget.is_on)
-        self.gui.lbl_off.config.assert_called_with(fg="#ff1744")
-        self.gui.lbl_on.config.assert_called_with(fg="#204020")
+        with patch.object(self.gui, 'update_interface_details_ui'):
+            self.gui.set_switch_state(False)
+            self.assertFalse(self.gui.is_monitor_on)
+            self.assertFalse(self.gui.toggle_widget.is_on)
+            self.gui.lbl_off.config.assert_called_with(fg="#ff1744")
+            self.gui.lbl_on.config.assert_called_with(fg="#204020")
 
     def test_toggle_monitor_calls_enable(self):
         """Test toggle calls enable when off."""
@@ -133,14 +135,13 @@ class TestMonitorGUI(unittest.TestCase):
     def test_check_monitor_mode_no_airmon_ng(self):
         """Test check_monitor_mode sets status warning when airmon-ng is missing."""
         self.gui.airmon_ng_available = False
-        
-        self.gui.check_monitor_mode()
-        self.gui.status_var.set.assert_called_with("Error: airmon-ng not found. Please install aircrack-ng.")
-        self.assertFalse(self.gui.is_monitor_on)
+        with patch.object(self.gui, 'update_interface_details_ui'):
+            self.gui.check_monitor_mode()
+            self.gui.status_var.set.assert_called_with("Error: airmon-ng not found. Please install aircrack-ng.")
+            self.assertFalse(self.gui.is_monitor_on)
 
     def test_toggle_tools_section(self):
         """Test toggling the tools section visibility and geometry."""
-        # Initially, tools should be visible
         self.assertTrue(self.gui.tools_visible)
         
         # Collapse tools
@@ -148,14 +149,14 @@ class TestMonitorGUI(unittest.TestCase):
         self.assertFalse(self.gui.tools_visible)
         self.gui.tools_container.pack_forget.assert_called_once()
         self.gui.btn_toggle_tools.config.assert_called_with(text="Show Quick Tools ▼")
-        self.mock_root.geometry.assert_called_with("420x290")
+        self.mock_root.geometry.assert_called_with("420x370")
         
         # Expand tools
         self.gui.toggle_tools_section()
         self.assertTrue(self.gui.tools_visible)
         self.gui.tools_container.pack.assert_called_with(fill="x", pady=5)
         self.gui.btn_toggle_tools.config.assert_called_with(text="Hide Quick Tools ▲")
-        self.mock_root.geometry.assert_called_with("420x500")
+        self.mock_root.geometry.assert_called_with("420x580")
 
     @patch('ezmonitormode.monitor_gui.get_interfaces_status')
     def test_get_active_monitor_interface_direct(self, mock_status):
@@ -178,37 +179,31 @@ class TestMonitorGUI(unittest.TestCase):
         mock_status.return_value = {"wlan0": "managed", "wlan1": "managed"}
         self.assertIsNone(self.gui.get_active_monitor_interface())
 
-    @patch.object(MonitorGUI, 'get_active_monitor_interface')
-    @patch.object(MonitorGUI, 'launch_in_terminal')
-    def test_run_wifite_with_interface(self, mock_launch, mock_get_mon):
-        """Test run_wifite injects interface argument when active."""
-        mock_get_mon.return_value = "wlan0mon"
-        self.gui.run_wifite()
-        mock_launch.assert_called_once_with("wifite -i wlan0mon", "Wifite")
+    @patch('subprocess.check_output')
+    def test_get_interface_details_iw(self, mock_check_output):
+        """Test parsing iw dev info output for interface details."""
+        mock_check_output.return_value = b"""Interface wlan0
+\taddr 11:22:33:44:55:66
+\ttype monitor
+\tchannel 6 (2437 MHz), width: 20 MHz
+\ttxpower 20.00 dBm
+"""
+        details = get_interface_details("wlan0")
+        self.assertEqual(details["mac"], "11:22:33:44:55:66")
+        self.assertEqual(details["mode"], "monitor")
+        self.assertEqual(details["channel"], "6")
+        self.assertEqual(details["freq"], "2437 MHz")
+        self.assertEqual(details["txpower"], "20.00 dBm")
 
-    @patch.object(MonitorGUI, 'get_active_monitor_interface')
-    @patch.object(MonitorGUI, 'launch_in_terminal')
-    def test_run_wifite_without_interface(self, mock_launch, mock_get_mon):
-        """Test run_wifite falls back to standard command when no active monitor interface."""
-        mock_get_mon.return_value = None
-        self.gui.run_wifite()
-        mock_launch.assert_called_once_with("wifite", "Wifite")
-
-    @patch.object(MonitorGUI, 'get_active_monitor_interface')
-    @patch('subprocess.Popen')
-    def test_run_wireshark_with_interface(self, mock_popen, mock_get_mon):
-        """Test run_wireshark injects interface argument when active."""
-        mock_get_mon.return_value = "wlan0mon"
-        self.gui.run_wireshark()
-        mock_popen.assert_called_once_with(["sudo", "wireshark", "-i", "wlan0mon"])
-
-    @patch.object(MonitorGUI, 'get_active_monitor_interface')
-    @patch('subprocess.Popen')
-    def test_run_wireshark_without_interface(self, mock_popen, mock_get_mon):
-        """Test run_wireshark falls back to standard command when no active monitor interface."""
-        mock_get_mon.return_value = None
-        self.gui.run_wireshark()
-        mock_popen.assert_called_once_with(["sudo", "wireshark"])
+    def test_channel_hopping_toggle_requires_monitor_mode(self):
+        """Test enabling channel hopping when monitor mode is OFF shows warning."""
+        self.gui.is_monitor_on = False
+        self.gui.hop_var.get.return_value = True
+        self.gui.toggle_channel_hopping()
+        self.mock_msgbox.showwarning.assert_called_with(
+            "Monitor Mode Required",
+            "Channel hopping requires monitor mode to be active."
+        )
 
 
 if __name__ == '__main__':

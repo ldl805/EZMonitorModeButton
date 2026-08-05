@@ -7,12 +7,13 @@ import shutil
 import sys
 import logging
 import threading
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-VERSION = "1.4.2"
+VERSION = "1.5.0"
 
 def get_interfaces_status():
     """Detects wireless interfaces and maps them to their mode ('managed', 'monitor')."""
@@ -62,6 +63,58 @@ def detect_interfaces():
             base_interfaces.append(iface)
             
     return sorted(list(set(base_interfaces)))
+
+def get_interface_details(iface):
+    """Returns a dict containing interface details: channel, freq, mac, txpower, mode."""
+    details = {
+        "channel": "Unknown",
+        "freq": "",
+        "mac": "Unknown",
+        "txpower": "",
+        "mode": "Unknown"
+    }
+    if not iface:
+        return details
+        
+    try:
+        output = subprocess.check_output(["iw", "dev", iface, "info"], stderr=subprocess.STDOUT, timeout=3).decode()
+        for line in output.split("\n"):
+            line = line.strip()
+            if line.startswith("addr "):
+                details["mac"] = line.split()[1]
+            elif line.startswith("type "):
+                details["mode"] = line.split()[1]
+            elif line.startswith("channel "):
+                parts = line.split()
+                details["channel"] = parts[1]
+                if "(" in line and ")" in line:
+                    details["freq"] = line.split("(")[1].split(")")[0]
+            elif line.startswith("txpower "):
+                parts = line.split()
+                details["txpower"] = " ".join(parts[1:])
+        return details
+    except Exception:
+        pass
+
+    try:
+        output = subprocess.check_output(["iwconfig", iface], stderr=subprocess.STDOUT, timeout=3).decode()
+        for line in output.split("\n"):
+            if "Mode:" in line:
+                mode_part = line.split("Mode:")[1].split()[0]
+                details["mode"] = mode_part
+            if "Frequency:" in line:
+                freq_part = line.split("Frequency:")[1].split()[0]
+                details["freq"] = freq_part + " GHz"
+            if "Channel=" in line:
+                chan_part = line.split("Channel=")[1].split()[0]
+                details["channel"] = chan_part
+            if "Tx-Power=" in line:
+                tx_part = line.split("Tx-Power=")[1].split()[0]
+                details["txpower"] = tx_part + " dBm"
+    except Exception:
+        pass
+        
+    return details
 
 def center_window(window, width, height):
     """Centers the window on the screen."""
@@ -141,7 +194,7 @@ class MonitorGUI:
         self.interface = interfaces[0] if interfaces else "wlan1"
         
         master.title(f"EZ Monitor Mode {VERSION}")
-        center_window(master, 420, 500)
+        center_window(master, 420, 580)
         master.resizable(False, False)
 
         # Style Configuration
@@ -151,10 +204,17 @@ class MonitorGUI:
         # State
         self.is_monitor_on = False
         self.is_transitioning = False
+        self.is_channel_hopping = False
+        self.hopping_stop_event = threading.Event()
+        self.hopping_thread = None
+        self.available_channels = [
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+            "36", "40", "44", "48", "149", "153", "157", "161", "165"
+        ]
 
         # --- Top: Interface Selection ---
         iface_frame = ttk.Frame(master)
-        iface_frame.pack(fill="x", padx=20, pady=15)
+        iface_frame.pack(fill="x", padx=20, pady=12)
         
         lbl_iface = ttk.Label(iface_frame, text="Wireless Interface:", font=("Helvetica", 10, "bold"))
         lbl_iface.pack(side="left", pady=5)
@@ -186,7 +246,7 @@ class MonitorGUI:
         self.btn_refresh.pack(side="right")
 
         # --- Middle: Custom Glowing Toggle Switch Panel ---
-        self.switch_frame = tk.Frame(master, height=100, bg="#1a1a1a", relief="groove", borderwidth=1)
+        self.switch_frame = tk.Frame(master, height=95, bg="#1a1a1a", relief="groove", borderwidth=1)
         self.switch_frame.pack(fill="x", side="top", padx=20, pady=5)
         self.switch_frame.pack_propagate(False)
 
@@ -223,6 +283,51 @@ class MonitorGUI:
         self.lbl_off.bind("<Button-1>", lambda e: self.toggle_monitor())
         self.lbl_on.bind("<Button-1>", lambda e: self.toggle_monitor())
 
+        # --- Live Channel & Interface Details Panel (Usability Upgrade) ---
+        self.channel_frame = tk.Frame(master, bg="#252525", relief="groove", borderwidth=1)
+        self.channel_frame.pack(fill="x", padx=20, pady=5)
+
+        lbl_details_header = ttk.Label(self.channel_frame, text="Interface Status & Channel Control", font=("Helvetica", 9, "bold"))
+        lbl_details_header.pack(pady=(4, 2))
+
+        self.lbl_mac_info = ttk.Label(self.channel_frame, text="MAC: --:--:--:--:--:--  |  TX: --", font=("Helvetica", 8))
+        self.lbl_mac_info.pack(pady=1)
+
+        self.lbl_chan_info = ttk.Label(self.channel_frame, text="Mode: --  |  Channel: --", font=("Helvetica", 9, "bold"))
+        self.lbl_chan_info.pack(pady=1)
+
+        chan_ctrl_subframe = ttk.Frame(self.channel_frame)
+        chan_ctrl_subframe.pack(pady=5)
+
+        lbl_set_chan = ttk.Label(chan_ctrl_subframe, text="Ch:", font=("Helvetica", 9))
+        lbl_set_chan.pack(side="left", padx=2)
+
+        self.chan_var = tk.StringVar(value="1")
+        self.chan_spin = ttk.Spinbox(
+            chan_ctrl_subframe,
+            values=self.available_channels,
+            textvariable=self.chan_var,
+            width=5
+        )
+        self.chan_spin.pack(side="left", padx=2)
+
+        self.btn_set_chan = ttk.Button(
+            chan_ctrl_subframe,
+            text="Set",
+            width=5,
+            command=self.set_channel_click
+        )
+        self.btn_set_chan.pack(side="left", padx=4)
+
+        self.hop_var = tk.BooleanVar(value=False)
+        self.chk_hop = ttk.Checkbutton(
+            chan_ctrl_subframe,
+            text="Auto Hop (1,6,11)",
+            variable=self.hop_var,
+            command=self.toggle_channel_hopping
+        )
+        self.chk_hop.pack(side="left", padx=6)
+
         # --- Bottom: Status and Tools ---
         
         # Status Label
@@ -235,7 +340,7 @@ class MonitorGUI:
             wraplength=350,
             justify="center"
         )
-        self.status_label.pack(pady=12)
+        self.status_label.pack(pady=8)
 
         # Toggle Tools Button
         self.tools_visible = True
@@ -245,34 +350,35 @@ class MonitorGUI:
             command=self.toggle_tools_section,
             width=20
         )
-        self.btn_toggle_tools.pack(pady=5)
+        self.btn_toggle_tools.pack(pady=4)
 
         # Tools Container (collapsible)
         self.tools_container = ttk.Frame(master)
-        self.tools_container.pack(fill="x", pady=5)
+        self.tools_container.pack(fill="x", pady=4)
 
         # Tools Section
         separator = ttk.Separator(self.tools_container, orient='horizontal')
-        separator.pack(fill='x', padx=20, pady=5)
+        separator.pack(fill='x', padx=20, pady=4)
 
-        lbl_tools = ttk.Label(self.tools_container, text="Quick Tools", font=("Helvetica", 12, "bold"))
-        lbl_tools.pack(pady=5)
+        lbl_tools = ttk.Label(self.tools_container, text="Quick Tools", font=("Helvetica", 11, "bold"))
+        lbl_tools.pack(pady=2)
 
         self.tools_frame = ttk.Frame(self.tools_container)
-        self.tools_frame.pack(pady=5)
+        self.tools_frame.pack(pady=4)
 
         self.btn_wifite = ttk.Button(self.tools_frame, text="Launch Wifite", width=18, command=self.run_wifite)
-        self.btn_wifite.grid(row=0, column=0, padx=6, pady=5)
+        self.btn_wifite.grid(row=0, column=0, padx=6, pady=4)
 
         self.btn_wireshark = ttk.Button(self.tools_frame, text="Launch Wireshark", width=18, command=self.run_wireshark)
-        self.btn_wireshark.grid(row=0, column=1, padx=6, pady=5)
+        self.btn_wireshark.grid(row=0, column=1, padx=6, pady=4)
 
         self.btn_kismet = ttk.Button(self.tools_frame, text="Launch Kismet", width=38, command=self.run_kismet)
-        self.btn_kismet.grid(row=1, column=0, columnspan=2, pady=8, sticky="ew")
+        self.btn_kismet.grid(row=1, column=0, columnspan=2, pady=6, sticky="ew")
 
         # Initial check & Tool configurations
         self.check_monitor_mode()
         self.check_tools_availability()
+        self.update_interface_details_ui()
 
     def _setup_style(self):
         style = ttk.Style()
@@ -289,6 +395,8 @@ class MonitorGUI:
         style.configure('TLabel', background=bg_color, foreground=fg_color, font=('Helvetica', 10))
         style.configure('TFrame', background=bg_color)
         style.configure('TSeparator', background='#3e3e3e')
+        style.configure('TCheckbutton', background=bg_color, foreground=fg_color)
+        style.configure('TSpinbox', fieldbackground=card_bg, foreground=fg_color, arrowcolor=fg_color)
         
         # OptionMenu / Dropdown
         style.configure('TMenubutton', background=card_bg, foreground=fg_color, bordercolor='#3e3e3e', padding=5)
@@ -311,12 +419,12 @@ class MonitorGUI:
             self.tools_container.pack_forget()
             self.btn_toggle_tools.config(text="Show Quick Tools ▼")
             self.tools_visible = False
-            self.master.geometry("420x290")
+            self.master.geometry("420x370")
         else:
             self.tools_container.pack(fill="x", pady=5)
             self.btn_toggle_tools.config(text="Hide Quick Tools ▲")
             self.tools_visible = True
-            self.master.geometry("420x500")
+            self.master.geometry("420x580")
 
     def check_tools_availability(self):
         """Verifies if the security utilities are installed on the system."""
@@ -366,11 +474,100 @@ class MonitorGUI:
         
         self.status_var.set("Interfaces refreshed.")
         self.check_monitor_mode()
+        self.update_interface_details_ui()
 
     def update_interface(self, val):
         self.interface = val
         self.iface_var.set(val)
         self.check_monitor_mode()
+        self.update_interface_details_ui()
+
+    def update_interface_details_ui(self):
+        """Refreshes live MAC, channel, frequency, and txpower in UI."""
+        active_iface = self.get_active_monitor_interface() or self.interface
+        details = get_interface_details(active_iface)
+        
+        mac_str = details["mac"] if details["mac"] != "Unknown" else "--:--:--:--:--:--"
+        tx_str = details["txpower"] if details["txpower"] else "N/A"
+        self.lbl_mac_info.config(text=f"MAC: {mac_str}  |  TX: {tx_str}")
+        
+        chan = details["channel"]
+        freq = f" ({details['freq']})" if details["freq"] else ""
+        mode = details["mode"].upper()
+        self.lbl_chan_info.config(text=f"Mode: {mode}  |  Channel: {chan}{freq}")
+        
+        if chan != "Unknown" and not self.is_channel_hopping:
+            self.chan_var.set(chan)
+
+    def set_channel_click(self):
+        """Handler for 'Set' channel button."""
+        chan = self.chan_var.get().strip()
+        if not chan.isdigit():
+            messagebox.showwarning("Invalid Channel", "Please select or enter a valid numeric channel.")
+            return
+            
+        active_iface = self.get_active_monitor_interface() or self.interface
+        self.set_interface_channel(active_iface, chan)
+
+    def set_interface_channel(self, iface, channel):
+        """Sets the operating channel on the specified interface."""
+        def _run():
+            try:
+                res = subprocess.run(["sudo", "iw", "dev", iface, "set", "channel", str(channel)], capture_output=True, timeout=5)
+                if res.returncode != 0:
+                    subprocess.run(["sudo", "iwconfig", iface, "channel", str(channel)], capture_output=True, timeout=5)
+                self.master.after(0, self.update_interface_details_ui)
+                self.master.after(0, lambda: self.status_var.set(f"Channel set to {channel} on {iface}"))
+            except Exception as e:
+                logging.error(f"Failed to set channel {channel} on {iface}: {e}")
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def toggle_channel_hopping(self):
+        """Enables or disables automatic channel hopping across channels 1, 6, 11."""
+        if self.hop_var.get():
+            if not self.is_monitor_on:
+                messagebox.showwarning("Monitor Mode Required", "Channel hopping requires monitor mode to be active.")
+                self.hop_var.set(False)
+                return
+            self.start_channel_hopping()
+        else:
+            self.stop_channel_hopping()
+
+    def start_channel_hopping(self):
+        self.is_channel_hopping = True
+        self.hopping_stop_event.clear()
+        self.btn_set_chan.config(state="disabled")
+        self.chan_spin.config(state="disabled")
+        
+        self.hopping_thread = threading.Thread(target=self._channel_hopping_loop, daemon=True)
+        self.hopping_thread.start()
+        self.status_var.set("Channel Hopping active (1, 6, 11)...")
+
+    def stop_channel_hopping(self):
+        self.is_channel_hopping = False
+        self.hopping_stop_event.set()
+        self.btn_set_chan.config(state="normal")
+        self.chan_spin.config(state="normal")
+        self.hop_var.set(False)
+        self.update_interface_details_ui()
+
+    def _channel_hopping_loop(self):
+        hop_channels = ["1", "6", "11"]
+        idx = 0
+        while not self.hopping_stop_event.is_set():
+            if self.is_monitor_on:
+                active_iface = self.get_active_monitor_interface() or self.interface
+                target_chan = hop_channels[idx % len(hop_channels)]
+                try:
+                    res = subprocess.run(["sudo", "iw", "dev", active_iface, "set", "channel", target_chan], capture_output=True, timeout=2)
+                    if res.returncode != 0:
+                        subprocess.run(["sudo", "iwconfig", active_iface, "channel", target_chan], capture_output=True, timeout=2)
+                except Exception:
+                    pass
+                self.master.after(0, lambda c=target_chan: self.lbl_chan_info.config(text=f"Mode: MONITOR  |  Channel: {c} (Hopping...)"))
+                idx += 1
+            self.hopping_stop_event.wait(2.0)
 
     def check_monitor_mode(self):
         """Checks if the interface or its mon counterpart is in monitor mode."""
@@ -420,6 +617,9 @@ class MonitorGUI:
             self.lbl_off.config(fg="#ff1744")    # Glowing red
             self.lbl_on.config(fg="#204020")     # Dim green
             self.status_var.set(f"{self.interface} is in Managed Mode")
+            self.stop_channel_hopping()
+            
+        self.update_interface_details_ui()
 
     def toggle_monitor(self):
         if self.is_transitioning:
@@ -474,8 +674,10 @@ class MonitorGUI:
 
     def _run_disable_monitor(self):
         try:
+            self.stop_channel_hopping()
+            active_mon = self.get_active_monitor_interface() or self.interface
             stop_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop_monitor_mode.sh")
-            self.run_command_in_thread(["sudo", "bash", stop_script, self.interface], "Disable monitor mode")
+            self.run_command_in_thread(["sudo", "bash", stop_script, active_mon], "Disable monitor mode")
             
             self.master.after(0, lambda: messagebox.showinfo("Success", "Monitor mode disabled. Network services restarted."))
         except Exception as e:
@@ -502,6 +704,7 @@ class MonitorGUI:
         self.btn_refresh.config(state="normal")
         self.iface_menu.config(state="normal")
         self.check_monitor_mode()
+        self.update_interface_details_ui()
 
     def launch_in_terminal(self, cmd, title):
         term = None
