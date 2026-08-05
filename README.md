@@ -2,7 +2,11 @@
 
 A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
-<img width="384" height="197" alt="guiez" src="https://repository-images.githubusercontent.com/1140614965/7aa3f1f6-befa-4039-afb9-df3dae1b58b8" />
+Announcing v1.5.1, our newest version yet - same basic and robust functionality you've come to rely on, as well as more data at your fingertips. The program now features a new Interface Status & Channel Control card that shows:
+      • Live Details Display: live real-time MAC display of address, TX Power, Frequency, and Channel.
+      • Channel Selector: Quick dropdown/spinbox selector and Set button to switch channels on the fly.
+      • Auto Channel Hop Checkbox: Background thread cycling through channels 1, 6, and 11 every 2 seconds for multi-channel scanning with tools like Wireshark or Kismet.
+
   
        In wireless security auditing, the standard way to enable monitor mode is using the  aircrack-ng  suite:
 
@@ -52,28 +56,6 @@ A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable
     ⋮
     ⋮     
 
-
-## Version 1.4.2 (New!)
-*   **Subprocess Timeout Safeguards:** Protects GUI thread from freezing if a wireless driver hangs.
-*   **Smart Interface Injection:** Automatically passes target monitor interfaces to Wireshark (`-i`), Wifite (`-i`), and Kismet (`-c`).
-*   **Robust Dependency Guard:** Gracefully warns and disables action if the `airmon-ng` suite is missing.
-
-## Version 1.4.1
-*   **Targeted Interface Disabling:** Stop scripts now target specific monitor interfaces rather than alphabetically first.
-*   **Crash Safeguards:** Fixed a GUI refresh crash when started with no adapters connected, and added safe Unicode error decoding.
-*   **Legacy OS Compatibility:** Restores `dhcpcd` networking services on legacy Pi OS installations.
-*   **UX/Aesthetics:** Added interactive mouse cursor indicator and hover outline animations for the custom slider.
-*   **Subprocess Compatibility:** Runs terminal emulators as the original desktop user when launched via root wrapper to bypass desktop permission blocks.
-
-## Version 1.4.0
-*   **Collapsible Tools Panel:** Added a toggle button to collapse the Quick Tools section at the bottom, dynamically resizing the window to make only the main button/switch GUI visible.
-*   **Custom Glowing Toggle Switch:** Features a Canvas-based sliding switch flanked by status labels. Both ON and OFF are visible, with only the active state glowing (neon green for ON, bright red for OFF).
-*   **Smooth Non-Freezing GUI:** Ported command executions (`airmon-ng start/stop`) to background threads. The interface stays responsive and updates status messages in real-time during transitions.
-*   **Precise Interface Tracking:** Implemented exact status checking using a custom `iw dev` parser (with `iwconfig` fallback) to eliminate false positive states when multiple wireless adapters are active.
-*   **Smart Tool Launcher Validation:** Detects if Wifite, Wireshark, or Kismet are installed. If a tool is missing, its launch button is gracefully disabled and labeled `(N/A)`.
-*   **Slate Dark Theme:** Upgraded to a modern slate/charcoal styling configured via `ttk.Style`.
-*   **Window Centering:** GUI centers itself on launch for better desktop UX.
-*   **Interface Refresh:** Clear button to scan and refresh the list of available wireless cards.
 
 ## Installation (Recommended)
 
