@@ -205,6 +205,10 @@ class MonitorGUI:
         self.is_monitor_on = False
         self.is_transitioning = False
         self.is_channel_hopping = False
+        self.airmon_ng_available = False
+        self.wifite_available = False
+        self.wireshark_available = False
+        self.kismet_available = False
         self.hopping_stop_event = threading.Event()
         self.hopping_thread = None
         self.available_channels = [
@@ -376,8 +380,8 @@ class MonitorGUI:
         self.btn_kismet.grid(row=1, column=0, columnspan=2, pady=6, sticky="ew")
 
         # Initial check & Tool configurations
-        self.check_monitor_mode()
         self.check_tools_availability()
+        self.check_monitor_mode()
         self.update_interface_details_ui()
 
     def _setup_style(self):

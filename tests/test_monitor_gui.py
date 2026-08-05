@@ -52,6 +52,16 @@ class TestMonitorGUI(unittest.TestCase):
         self.assertEqual(self.gui.interface, "wlan0") # First interface
         self.assertFalse(self.gui.is_monitor_on)
 
+    @patch('ezmonitormode.monitor_gui.get_interfaces_status')
+    @patch('ezmonitormode.monitor_gui.get_interface_details')
+    def test_gui_initialization_full_unpatched(self, mock_details, mock_status):
+        """Test that MonitorGUI initializes without error when unpatched."""
+        mock_status.return_value = {"wlan0": "managed"}
+        mock_details.return_value = {"channel": "1", "freq": "2412 MHz", "mac": "00:11:22:33:44:55", "txpower": "20 dBm", "mode": "managed"}
+        app = MonitorGUI(self.mock_root, ["wlan0"])
+        self.assertIsNotNone(app)
+        self.assertTrue(hasattr(app, 'airmon_ng_available'))
+
     def test_gui_creates_widgets(self):
         """Test that GUI creates expected widgets."""
         self.mock_root.title.assert_called_with(f"EZ Monitor Mode {VERSION}")
