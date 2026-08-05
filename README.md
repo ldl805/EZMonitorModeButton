@@ -6,11 +6,11 @@ Announcing v1.5.1, our newest version yet!
 
 You get the same basic and robust functionality you've come to rely on, as well as more data at your fingertips. The program now features a new Interface Status & Channel Control card that shows:
 
-• Live Details Display: live real-time MAC display of address, TX Power, Frequency, and Channel.
+ •Live Details Display: live real-time MAC display of address, TX Power, Frequency, and Channel.
       
-• Channel Selector: Quick dropdown/spinbox selector and Set button to switch channels on the fly.
+ •Channel Selector: Quick dropdown/spinbox selector and Set button to switch channels on the fly.
       
-• Auto Channel Hop Checkbox: Background thread cycling through channels 1, 6, and 11 every 2 seconds for multi-channel scanning with tools like Wireshark or Kismet.
+ •Auto Channel Hop Checkbox: Background thread cycling through channels 1, 6, and 11 every 2 seconds for multi-channel scanning with tools like Wireshark or Kismet.
 
   
 In wireless security auditing, the standard way to enable monitor mode is using the  aircrack-ng  suite:
@@ -21,11 +21,11 @@ In wireless security auditing, the standard way to enable monitor mode is using 
     
 While entering monitor mode is easy, exiting it can be tedious and frustrating:
  
-• The Annoyance: When  airmon-ng check kill  runs, it completely destroys the system's normal internet connectivity. To get back online, a user has to stop monitor mode and manually restart all networking services in the correct sequence.
+ •The Annoyance: When  airmon-ng check kill  runs, it completely destroys the system's normal internet connectivity. To get back online, a user has to stop monitor mode and manually restart all networking services in the correct sequence.
  
-• How EZMonitorModeButton solves this: This program automatically stops the monitor interface and sequentially restarts  NetworkManager, wpa_supplicant, avahi-daemon,and dhcpcd.
+ •How EZMonitorModeButton solves this: This program automatically stops the monitor interface and sequentially restarts  NetworkManager, wpa_supplicant, avahi-daemon,and dhcpcd.
  
-• The Value: It acts as a safety net. Instead of leaving the user with broken internet, a single click restores normal network state cleanly.
+ •The Value: It acts as a safety net. Instead of leaving the user with broken internet, a single click restores normal network state cleanly.
 
         ┌────────────────┐
         │ Start Auditing │
