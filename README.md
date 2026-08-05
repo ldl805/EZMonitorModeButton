@@ -2,9 +2,14 @@
 
 A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
-Announcing v1.5.1, our newest version yet - same basic and robust functionality you've come to rely on, as well as more data at your fingertips. The program now features a new Interface Status & Channel Control card that shows:
+Announcing v1.5.1, our newest version yet!
+
+You get the same basic and robust functionality you've come to rely on, as well as more data at your fingertips. The program now features a new Interface Status & Channel Control card that shows:
+
       • Live Details Display: live real-time MAC display of address, TX Power, Frequency, and Channel.
+      
       • Channel Selector: Quick dropdown/spinbox selector and Set button to switch channels on the fly.
+      
       • Auto Channel Hop Checkbox: Background thread cycling through channels 1, 6, and 11 every 2 seconds for multi-channel scanning with tools like Wireshark or Kismet.
 
   
