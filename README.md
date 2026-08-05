@@ -2,22 +2,51 @@
 
 A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
-Announcing v1.5.1, our newest version yet - same basic and robust functionality you've come to rely on, as well as more data at your fingertips. The program now features a new Interface Status & Channel Control card that shows:
-      • Live Details Display: live real-time MAC display of address, TX Power, Frequency, and Channel.
-      • Channel Selector: Quick dropdown/spinbox selector and Set button to switch channels on the fly.
-      • Auto Channel Hop Checkbox: Background thread cycling through channels 1, 6, and 11 every 2 seconds for multi-channel scanning with tools like Wireshark or Kismet.
+ _________________________
+ 
+
+ UPDATE - VERSION 1.5.1- same basic and robust functionality you rely on, now with even more data at your fingertips. When in use, the app now contains a small text field that includes:
+  
+  • Live Details Display: live real-time MAC display of address, TX Power, Frequency, and Channel.
+       
+  • Channel Selector: Quick dropdown/spinbox selector and Set button to switch channels on the fly.
+       
+  • Auto Channel Hop Checkbox: Background thread cycling through channels 1, 6, and 11 every 2 seconds for multi-channel scanning with tools like Wireshark or Kismet.
+
+   _________________________
 
   
-       In wireless security auditing, the standard way to enable monitor mode is using the  aircrack-ng  suite:
+In wireless security auditing, the standard way to enable monitor mode is using the  aircrack-ng  suite:
 
-        1.  sudo airmon-ng check kill  (kills network managers,  wpa_supplicant ,  dhcpcd , etc.)
-        2.  sudo airmon-ng start wlan0 
+   1.  sudo airmon-ng check kill  (kills network managers,  wpa_supplicant ,  dhcpcd , etc.)
+   2.  sudo airmon-ng start wlan0 
     
          While entering monitor mode is easy, exiting it can be tedious and frustrating:
 
-        • The Annoyance: When  airmon-ng check kill  runs, it completely destroys the system's normal internet connectivity. To get back online, a user has to stop monitor mode and manually restart all networking services in the correct sequence.
-        • How EZMonitorModeButton solves this: This program automatically stops the monitor interface and sequentially restarts  NetworkManager, wpa_supplicant, avahi-daemon,and dhcpcd .
-        • The Value: It acts as a safety net. Instead of leaving the user with broken internet, a single click restores normal network state cleanly.
+_________________________
+The Annoyance:
+
+   
+ When  airmon-ng check kill  runs, it completely destroys the system's normal internet connectivity. To get back online, a user has to stop monitor mode and manually restart all networking services in the correct sequence.
+
+
+_________________________
+
+  
+How EZMonitorModeButton solves this: 
+
+
+   This program automatically stops the monitor interface and sequentially restarts  NetworkManager, wpa_supplicant, avahi-daemon,and dhcpcd .
+   
+_________________________
+
+  
+The Value: 
+
+  
+   It acts as a safety net. Instead of leaving the user with broken internet, a single click restores normal network state cleanly.
+   
+_________________________
 
 
               ┌────────────────┐
