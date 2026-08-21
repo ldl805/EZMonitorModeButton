@@ -5,35 +5,6 @@ A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable
  _________________________
  
 
-NEW VERSION 2.0 -  CHANGELOG:
-  1.  Packet Injection Testing Button (aireplay-ng --test)
-      • Added a one-click "Test Injection" button in monitor_gui.py.
-      • Validates that monitor mode is active and automatically targets the live monitor interface to verify adapter frame injection capability.
-  2.  Direct Airodump-ng Quick Launcher
-      • Added a "Launch Airodump-ng" button to instantly spawn a live channel and BSSID packet sniffing terminal.
-  3.  Multi-Band Channel Hopping Engine & Presets
-      • Expanded channel control with selectable hopping profiles:
-	  • 1, 6, 11 (2.4GHz)
-	  • All 2.4GHz (1-14)
-	  • 5GHz UNII-1/3 (36-165)
-	  • All Channels (combined 2.4 & 5 GHz)
-
-  4.  RFKill Driver Soft-Block Safeguards
-      • Added rfkill unblock wifi || rfkill unblock all to stop_monitor_mode.sh to prevent kernel/hardware soft-blocks on USB Wi-Fi dongles during service restoration.
-  5.  Broad Linux & Raspberry Pi Terminal Compatibility
-      • Upgraded monitor_gui.py:714-753 with automatic detection for lxterminal, xfce4-terminal, mate-terminal, konsole, terminator, tilix, alacritty, kitty, foot, xterm, and gnome-terminal.
-  6.  Safe Parsing & Exception Hardening
-      • Hardened iw dev and iwconfig output decoding with .decode(errors='replace') across all subprocess calls.
-      • Filtered out non-wireless interfaces (no wireless extensions) in iwconfig fallback mode.
-  7.  Packaging, Documentation, & Tests
-      • Bumped version to 2.0.0 in pyproject.toml, build_deb.sh, ezmonitormode.desktop, and monitor_gui.py.
-      • Updated README.md with the Version 2.0.0 changelog.
-      • Expanded test_monitor_gui.py to 24 unit tests covering injection testing, terminal detection, hopping controls, and interface decoders.
-
-
-   _________________________
-
-  
 In wireless security auditing, the standard way to enable monitor mode is using the  aircrack-ng  suite:
 
    1.  sudo airmon-ng check kill  (kills network managers,  wpa_supplicant ,  dhcpcd , etc.)
@@ -67,7 +38,7 @@ The Value:
 _________________________
 
 
-              ┌────────────────┐
+    ⋮         ┌────────────────┐
     ⋮         │ Start Auditing │
     ⋮         └────────────────┘
     ⋮                  │
