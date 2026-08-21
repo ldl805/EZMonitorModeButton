@@ -74,28 +74,34 @@ else
     sudo airmon-ng stop wlan1 >/dev/null 2>&1
 fi
 
+# Ensure Wi-Fi is not left soft-blocked by driver kernel transitions
+if command -v rfkill >/dev/null 2>&1; then
+    echo "Ensuring wireless interfaces are unblocked (rfkill unblock wifi)..."
+    sudo rfkill unblock wifi 2>/dev/null || sudo rfkill unblock all 2>/dev/null
+fi
+
 echo "Restarting network services..."
 
 # Restart NetworkManager (manages connections)
-if systemctl list-unit-files | grep -q NetworkManager; then
+if systemctl list-unit-files 2>/dev/null | grep -q NetworkManager; then
     echo "Restarting NetworkManager..."
     sudo systemctl restart NetworkManager
 fi
 
 # Restart wpa_supplicant (often handled by NM, but good to ensure)
-if systemctl list-unit-files | grep -q wpa_supplicant; then
+if systemctl list-unit-files 2>/dev/null | grep -q wpa_supplicant; then
     echo "Restarting wpa_supplicant..."
     sudo systemctl restart wpa_supplicant
 fi
 
 # Restart avahi-daemon (mDNS)
-if systemctl list-unit-files | grep -q avahi-daemon; then
+if systemctl list-unit-files 2>/dev/null | grep -q avahi-daemon; then
     echo "Restarting avahi-daemon..."
     sudo systemctl restart avahi-daemon
 fi
 
 # Restart dhcpcd if present (for legacy/alternative Raspberry Pi installations)
-if systemctl list-unit-files | grep -q dhcpcd; then
+if systemctl list-unit-files 2>/dev/null | grep -q dhcpcd; then
     echo "Restarting dhcpcd..."
     sudo systemctl restart dhcpcd
 fi

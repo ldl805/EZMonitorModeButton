@@ -13,7 +13,20 @@ import time
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-VERSION = "1.5.1"
+VERSION = "2.0.0"
+
+AVAILABLE_CHANNELS = [
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+    "36", "40", "44", "48", "52", "56", "60", "64", "100", "104", "108", "112",
+    "116", "120", "124", "128", "132", "136", "140", "144", "149", "153", "157", "161", "165"
+]
+
+HOP_PROFILES = {
+    "1, 6, 11 (2.4GHz)": ["1", "6", "11"],
+    "2.4GHz (1-14)": [str(c) for c in range(1, 15)],
+    "5GHz UNII-1/3": ["36", "40", "44", "48", "149", "153", "157", "161", "165"],
+    "All Channels": [str(c) for c in range(1, 15)] + ["36", "40", "44", "48", "149", "153", "157", "161", "165"]
+}
 
 def get_interfaces_status():
     """Detects wireless interfaces and maps them to their mode ('managed', 'monitor')."""
@@ -21,7 +34,7 @@ def get_interfaces_status():
     
     # Try 'iw dev' first (modern standard)
     try:
-        output = subprocess.check_output(["iw", "dev"], stderr=subprocess.STDOUT, timeout=5).decode()
+        output = subprocess.check_output(["iw", "dev"], stderr=subprocess.STDOUT, timeout=5).decode(errors='replace')
         current_iface = None
         for line in output.split("\n"):
             line = line.strip()
@@ -33,10 +46,10 @@ def get_interfaces_status():
     except (subprocess.SubprocessError, FileNotFoundError):
         # Fallback to 'iwconfig'
         try:
-            output = subprocess.check_output(["iwconfig"], stderr=subprocess.STDOUT, timeout=5).decode()
+            output = subprocess.check_output(["iwconfig"], stderr=subprocess.STDOUT, timeout=5).decode(errors='replace')
             current_iface = None
             for line in output.split("\n"):
-                if not line:
+                if not line or "no wireless extensions" in line.lower():
                     continue
                 parts = line.split()
                 if len(parts) > 0 and not line.startswith(" "):
@@ -59,6 +72,8 @@ def detect_interfaces():
     for iface in interfaces:
         if iface.endswith("mon"):
             base_interfaces.append(iface[:-3])
+        elif iface.endswith(".mon"):
+            base_interfaces.append(iface[:-4])
         else:
             base_interfaces.append(iface)
             
@@ -77,7 +92,7 @@ def get_interface_details(iface):
         return details
         
     try:
-        output = subprocess.check_output(["iw", "dev", iface, "info"], stderr=subprocess.STDOUT, timeout=3).decode()
+        output = subprocess.check_output(["iw", "dev", iface, "info"], stderr=subprocess.STDOUT, timeout=3).decode(errors='replace')
         for line in output.split("\n"):
             line = line.strip()
             if line.startswith("addr "):
@@ -97,7 +112,7 @@ def get_interface_details(iface):
         pass
 
     try:
-        output = subprocess.check_output(["iwconfig", iface], stderr=subprocess.STDOUT, timeout=3).decode()
+        output = subprocess.check_output(["iwconfig", iface], stderr=subprocess.STDOUT, timeout=3).decode(errors='replace')
         for line in output.split("\n"):
             if "Mode:" in line:
                 mode_part = line.split("Mode:")[1].split()[0]
@@ -194,8 +209,9 @@ class MonitorGUI:
         self.interface = interfaces[0] if interfaces else "wlan1"
         
         master.title(f"EZ Monitor Mode {VERSION}")
-        center_window(master, 420, 580)
-        master.resizable(False, False)
+        center_window(master, 440, 640)
+        master.minsize(420, 390)
+        master.resizable(True, True)
 
         # Style Configuration
         self._setup_style()
@@ -206,19 +222,19 @@ class MonitorGUI:
         self.is_transitioning = False
         self.is_channel_hopping = False
         self.airmon_ng_available = False
+        self.airodump_available = False
+        self.aireplay_available = False
         self.wifite_available = False
         self.wireshark_available = False
         self.kismet_available = False
         self.hopping_stop_event = threading.Event()
         self.hopping_thread = None
-        self.available_channels = [
-            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
-            "36", "40", "44", "48", "149", "153", "157", "161", "165"
-        ]
+        self.available_channels = AVAILABLE_CHANNELS
+        self.hop_profiles = HOP_PROFILES
 
         # --- Top: Interface Selection ---
         iface_frame = ttk.Frame(master)
-        iface_frame.pack(fill="x", padx=20, pady=12)
+        iface_frame.pack(fill="x", padx=20, pady=10)
         
         lbl_iface = ttk.Label(iface_frame, text="Wireless Interface:", font=("Helvetica", 10, "bold"))
         lbl_iface.pack(side="left", pady=5)
@@ -250,7 +266,7 @@ class MonitorGUI:
         self.btn_refresh.pack(side="right")
 
         # --- Middle: Custom Glowing Toggle Switch Panel ---
-        self.switch_frame = tk.Frame(master, height=95, bg="#1a1a1a", relief="groove", borderwidth=1)
+        self.switch_frame = tk.Frame(master, height=90, bg="#1a1a1a", relief="groove", borderwidth=1)
         self.switch_frame.pack(fill="x", side="top", padx=20, pady=5)
         self.switch_frame.pack_propagate(False)
 
@@ -287,7 +303,7 @@ class MonitorGUI:
         self.lbl_off.bind("<Button-1>", lambda e: self.toggle_monitor())
         self.lbl_on.bind("<Button-1>", lambda e: self.toggle_monitor())
 
-        # --- Live Channel & Interface Details Panel (Usability Upgrade) ---
+        # --- Live Channel & Interface Details Panel ---
         self.channel_frame = tk.Frame(master, bg="#252525", relief="groove", borderwidth=1)
         self.channel_frame.pack(fill="x", padx=20, pady=5)
 
@@ -300,10 +316,11 @@ class MonitorGUI:
         self.lbl_chan_info = ttk.Label(self.channel_frame, text="Mode: --  |  Channel: --", font=("Helvetica", 9, "bold"))
         self.lbl_chan_info.pack(pady=1)
 
+        # Manual Channel Row
         chan_ctrl_subframe = ttk.Frame(self.channel_frame)
-        chan_ctrl_subframe.pack(pady=5)
+        chan_ctrl_subframe.pack(pady=3)
 
-        lbl_set_chan = ttk.Label(chan_ctrl_subframe, text="Ch:", font=("Helvetica", 9))
+        lbl_set_chan = ttk.Label(chan_ctrl_subframe, text="Manual Ch:", font=("Helvetica", 9))
         lbl_set_chan.pack(side="left", padx=2)
 
         self.chan_var = tk.StringVar(value="1")
@@ -323,14 +340,27 @@ class MonitorGUI:
         )
         self.btn_set_chan.pack(side="left", padx=4)
 
+        # Hopping Control Row
+        hop_subframe = ttk.Frame(self.channel_frame)
+        hop_subframe.pack(pady=(2, 6))
+
         self.hop_var = tk.BooleanVar(value=False)
         self.chk_hop = ttk.Checkbutton(
-            chan_ctrl_subframe,
-            text="Auto Hop (1,6,11)",
+            hop_subframe,
+            text="Auto Hop",
             variable=self.hop_var,
             command=self.toggle_channel_hopping
         )
-        self.chk_hop.pack(side="left", padx=6)
+        self.chk_hop.pack(side="left", padx=4)
+
+        self.hop_profile_var = tk.StringVar(value="1, 6, 11 (2.4GHz)")
+        self.profile_menu = ttk.OptionMenu(
+            hop_subframe,
+            self.hop_profile_var,
+            "1, 6, 11 (2.4GHz)",
+            *list(self.hop_profiles.keys())
+        )
+        self.profile_menu.pack(side="left", padx=4)
 
         # --- Bottom: Status and Tools ---
         
@@ -341,10 +371,10 @@ class MonitorGUI:
             master, 
             textvariable=self.status_var, 
             font=("Helvetica", 10, "italic"), 
-            wraplength=350,
+            wraplength=380,
             justify="center"
         )
-        self.status_label.pack(pady=8)
+        self.status_label.pack(pady=6)
 
         # Toggle Tools Button
         self.tools_visible = True
@@ -352,32 +382,39 @@ class MonitorGUI:
             master, 
             text="Hide Quick Tools ▲", 
             command=self.toggle_tools_section,
-            width=20
+            width=22
         )
-        self.btn_toggle_tools.pack(pady=4)
+        self.btn_toggle_tools.pack(pady=3)
 
         # Tools Container (collapsible)
         self.tools_container = ttk.Frame(master)
-        self.tools_container.pack(fill="x", pady=4)
+        self.tools_container.pack(fill="x", pady=2)
 
         # Tools Section
         separator = ttk.Separator(self.tools_container, orient='horizontal')
-        separator.pack(fill='x', padx=20, pady=4)
+        separator.pack(fill='x', padx=20, pady=3)
 
-        lbl_tools = ttk.Label(self.tools_container, text="Quick Tools", font=("Helvetica", 11, "bold"))
+        lbl_tools = ttk.Label(self.tools_container, text="Security Audit Tools", font=("Helvetica", 10, "bold"))
         lbl_tools.pack(pady=2)
 
         self.tools_frame = ttk.Frame(self.tools_container)
-        self.tools_frame.pack(pady=4)
+        self.tools_frame.pack(pady=2)
 
-        self.btn_wifite = ttk.Button(self.tools_frame, text="Launch Wifite", width=18, command=self.run_wifite)
-        self.btn_wifite.grid(row=0, column=0, padx=6, pady=4)
+        # Grid of Quick Tools
+        self.btn_airodump = ttk.Button(self.tools_frame, text="Launch Airodump-ng", width=19, command=self.run_airodump)
+        self.btn_airodump.grid(row=0, column=0, padx=4, pady=3)
 
-        self.btn_wireshark = ttk.Button(self.tools_frame, text="Launch Wireshark", width=18, command=self.run_wireshark)
-        self.btn_wireshark.grid(row=0, column=1, padx=6, pady=4)
+        self.btn_injection_test = ttk.Button(self.tools_frame, text="Test Injection", width=19, command=self.run_packet_injection_test)
+        self.btn_injection_test.grid(row=0, column=1, padx=4, pady=3)
 
-        self.btn_kismet = ttk.Button(self.tools_frame, text="Launch Kismet", width=38, command=self.run_kismet)
-        self.btn_kismet.grid(row=1, column=0, columnspan=2, pady=6, sticky="ew")
+        self.btn_wifite = ttk.Button(self.tools_frame, text="Launch Wifite", width=19, command=self.run_wifite)
+        self.btn_wifite.grid(row=1, column=0, padx=4, pady=3)
+
+        self.btn_wireshark = ttk.Button(self.tools_frame, text="Launch Wireshark", width=19, command=self.run_wireshark)
+        self.btn_wireshark.grid(row=1, column=1, padx=4, pady=3)
+
+        self.btn_kismet = ttk.Button(self.tools_frame, text="Launch Kismet", width=40, command=self.run_kismet)
+        self.btn_kismet.grid(row=2, column=0, columnspan=2, pady=4, sticky="ew")
 
         # Initial check & Tool configurations
         self.check_tools_availability()
@@ -423,20 +460,32 @@ class MonitorGUI:
             self.tools_container.pack_forget()
             self.btn_toggle_tools.config(text="Show Quick Tools ▼")
             self.tools_visible = False
-            self.master.geometry("420x370")
+            self.master.geometry("440x410")
         else:
-            self.tools_container.pack(fill="x", pady=5)
+            self.tools_container.pack(fill="x", pady=2)
             self.btn_toggle_tools.config(text="Hide Quick Tools ▲")
             self.tools_visible = True
-            self.master.geometry("420x580")
+            self.master.geometry("440x640")
 
     def check_tools_availability(self):
         """Verifies if the security utilities are installed on the system."""
+        self.airmon_ng_available = shutil.which("airmon-ng") is not None
+        self.airodump_available = shutil.which("airodump-ng") is not None
+        self.aireplay_available = shutil.which("aireplay-ng") is not None
         self.wifite_available = shutil.which("wifite") is not None
         self.wireshark_available = shutil.which("wireshark") is not None
         self.kismet_available = shutil.which("kismet") is not None
-        self.airmon_ng_available = shutil.which("airmon-ng") is not None
         
+        if self.airodump_available:
+            self.btn_airodump.config(state="normal", text="Launch Airodump-ng")
+        else:
+            self.btn_airodump.config(state="disabled", text="Airodump (N/A)")
+
+        if self.aireplay_available:
+            self.btn_injection_test.config(state="normal", text="Test Injection")
+        else:
+            self.btn_injection_test.config(state="disabled", text="Injection Test (N/A)")
+
         if self.wifite_available:
             self.btn_wifite.config(state="normal", text="Launch Wifite")
         else:
@@ -528,7 +577,7 @@ class MonitorGUI:
         threading.Thread(target=_run, daemon=True).start()
 
     def toggle_channel_hopping(self):
-        """Enables or disables automatic channel hopping across channels 1, 6, 11."""
+        """Enables or disables automatic channel hopping across selected profile."""
         if self.hop_var.get():
             if not self.is_monitor_on:
                 messagebox.showwarning("Monitor Mode Required", "Channel hopping requires monitor mode to be active.")
@@ -543,25 +592,29 @@ class MonitorGUI:
         self.hopping_stop_event.clear()
         self.btn_set_chan.config(state="disabled")
         self.chan_spin.config(state="disabled")
+        self.profile_menu.config(state="disabled")
         
         self.hopping_thread = threading.Thread(target=self._channel_hopping_loop, daemon=True)
         self.hopping_thread.start()
-        self.status_var.set("Channel Hopping active (1, 6, 11)...")
+        profile_name = self.hop_profile_var.get()
+        self.status_var.set(f"Channel Hopping active ({profile_name})...")
 
     def stop_channel_hopping(self):
         self.is_channel_hopping = False
         self.hopping_stop_event.set()
         self.btn_set_chan.config(state="normal")
         self.chan_spin.config(state="normal")
+        self.profile_menu.config(state="normal")
         self.hop_var.set(False)
         self.update_interface_details_ui()
 
     def _channel_hopping_loop(self):
-        hop_channels = ["1", "6", "11"]
         idx = 0
         while not self.hopping_stop_event.is_set():
             if self.is_monitor_on:
                 active_iface = self.get_active_monitor_interface() or self.interface
+                profile_name = self.hop_profile_var.get()
+                hop_channels = self.hop_profiles.get(profile_name, ["1", "6", "11"])
                 target_chan = hop_channels[idx % len(hop_channels)]
                 try:
                     res = subprocess.run(["sudo", "iw", "dev", active_iface, "set", "channel", target_chan], capture_output=True, timeout=2)
@@ -571,7 +624,7 @@ class MonitorGUI:
                     pass
                 self.master.after(0, lambda c=target_chan: self.lbl_chan_info.config(text=f"Mode: MONITOR  |  Channel: {c} (Hopping...)"))
                 idx += 1
-            self.hopping_stop_event.wait(2.0)
+            self.hopping_stop_event.wait(1.5)
 
     def check_monitor_mode(self):
         """Checks if the interface or its mon counterpart is in monitor mode."""
@@ -585,6 +638,8 @@ class MonitorGUI:
         if status.get(self.interface) == "monitor":
             self.set_switch_state(True)
         elif status.get(f"{self.interface}mon") == "monitor":
+            self.set_switch_state(True)
+        elif status.get(f"{self.interface}.mon") == "monitor":
             self.set_switch_state(True)
         else:
             self.set_switch_state(False)
@@ -712,13 +767,18 @@ class MonitorGUI:
 
     def launch_in_terminal(self, cmd, title):
         term = None
-        for t in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]:
+        # Check comprehensive list of Linux & Raspberry Pi terminal emulators
+        for t in [
+            "lxterminal", "x-terminal-emulator", "gnome-terminal", "xfce4-terminal",
+            "mate-terminal", "konsole", "terminator", "tilix", "alacritty",
+            "kitty", "foot", "xterm"
+        ]:
             if shutil.which(t):
                 term = t
                 break
         
         if not term:
-            messagebox.showerror("Error", "No terminal emulator found. Please install xterm or gnome-terminal.")
+            messagebox.showerror("Error", "No terminal emulator found. Please install lxterminal, xterm, or gnome-terminal.")
             return
         
         # Identify original non-root user if running elevated via sudo/pkexec
@@ -731,7 +791,7 @@ class MonitorGUI:
                 pass
                 
         try:
-            if term in ["gnome-terminal", "konsole"]:
+            if term in ["gnome-terminal", "mate-terminal", "tilix", "konsole"]:
                 term_cmd = [term, "--", "sudo", cmd]
             else:
                 term_cmd = [term, "-e", f"sudo {cmd}"]
@@ -750,6 +810,21 @@ class MonitorGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch {title}:\n{e}")
 
+    def run_airodump(self):
+        mon_iface = self.get_active_monitor_interface()
+        target = mon_iface or self.interface
+        cmd = f"airodump-ng {target}"
+        self.launch_in_terminal(cmd, "Airodump-ng")
+
+    def run_packet_injection_test(self):
+        mon_iface = self.get_active_monitor_interface()
+        if not mon_iface and not self.is_monitor_on:
+            messagebox.showwarning("Monitor Mode Required", "Please enable Monitor Mode before running the Packet Injection test.")
+            return
+        target = mon_iface or self.interface
+        cmd = f"aireplay-ng --test {target}"
+        self.launch_in_terminal(cmd, "Packet Injection Test")
+
     def run_wifite(self):
         mon_iface = self.get_active_monitor_interface()
         cmd = f"wifite -i {mon_iface}" if mon_iface else "wifite"
@@ -764,6 +839,20 @@ class MonitorGUI:
         try:
             mon_iface = self.get_active_monitor_interface()
             cmd_args = ["sudo", "wireshark", "-i", mon_iface] if mon_iface else ["sudo", "wireshark"]
+            user = os.environ.get("SUDO_USER")
+            if not user and os.environ.get("PKEXEC_UID"):
+                try:
+                    import pwd
+                    user = pwd.getpwuid(int(os.environ.get("PKEXEC_UID"))).pw_name
+                except Exception:
+                    pass
+            if user and os.geteuid() == 0:
+                display = os.environ.get("DISPLAY", ":0")
+                xauth = os.environ.get("XAUTHORITY", "")
+                env_args = [f"DISPLAY={display}"]
+                if xauth:
+                    env_args.append(f"XAUTHORITY={xauth}")
+                cmd_args = ["sudo", "-u", user, "env"] + env_args + cmd_args
             subprocess.Popen(cmd_args)
             self.status_var.set("Launched Wireshark")
         except Exception as e:
@@ -788,3 +877,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

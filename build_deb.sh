@@ -2,7 +2,7 @@
 # Script to build a Debian package for EZMonitorMode
 
 APP_NAME="ezmonitormode"
-VERSION="1.5.1"
+VERSION="2.0.0"
 PKG_DIR="${APP_NAME}_${VERSION}_all"
 
 echo "Building Debian package $PKG_DIR..."
@@ -20,13 +20,13 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: all
-Depends: python3, python3-tk, aircrack-ng, wireless-tools, iw
-Recommends: wifite, wireshark, kismet
+Depends: python3, python3-tk, aircrack-ng, wireless-tools, iw, rfkill
+Recommends: wifite, wireshark, kismet, lxterminal
 Maintainer: ldl805 <ldl805@github.com>
 Description: EZ Monitor Mode Manager
  A simple GUI to switch wireless interfaces into monitor mode and launch security tools.
- Automates airmon-ng check kill and interface management.
- Now with improved interface detection and better display handling.
+ Automates airmon-ng check kill, interface management, and network restoration.
+ Now with live packet injection testing, airodump launcher, and multi-band channel hopping.
 EOF
 
 # Create wrapper (Improved to handle DISPLAY, XAUTHORITY and xhost)

@@ -75,6 +75,43 @@ class TestMonitorGUI(unittest.TestCase):
             self.gui.launch_in_terminal("cmd", "Title")
             self.mock_msgbox.showerror.assert_called()
 
+    def test_get_terminal_lxterminal(self):
+        """Test launch_in_terminal uses lxterminal when available."""
+        with patch('shutil.which') as mock_which, patch('subprocess.Popen') as mock_popen:
+            mock_which.side_effect = lambda t: t == "lxterminal"
+            self.gui.launch_in_terminal("airodump-ng wlan0mon", "Airodump-ng")
+            mock_popen.assert_called_once()
+            args = mock_popen.call_args[0][0]
+            self.assertEqual(args[0], "lxterminal")
+            self.assertIn("airodump-ng wlan0mon", args[2])
+
+    def test_run_airodump(self):
+        """Test run_airodump launches terminal with active monitor interface."""
+        with patch.object(self.gui, 'get_active_monitor_interface', return_value="wlan0mon"), \
+             patch.object(self.gui, 'launch_in_terminal') as mock_launch:
+            self.gui.run_airodump()
+            mock_launch.assert_called_once_with("airodump-ng wlan0mon", "Airodump-ng")
+
+    def test_run_packet_injection_test_when_active(self):
+        """Test packet injection test launches when monitor mode is active."""
+        self.gui.is_monitor_on = True
+        with patch.object(self.gui, 'get_active_monitor_interface', return_value="wlan0mon"), \
+             patch.object(self.gui, 'launch_in_terminal') as mock_launch:
+            self.gui.run_packet_injection_test()
+            mock_launch.assert_called_once_with("aireplay-ng --test wlan0mon", "Packet Injection Test")
+
+    def test_run_packet_injection_test_when_off(self):
+        """Test packet injection test warns when monitor mode is not active."""
+        self.gui.is_monitor_on = False
+        with patch.object(self.gui, 'get_active_monitor_interface', return_value=None), \
+             patch.object(self.gui, 'launch_in_terminal') as mock_launch:
+            self.gui.run_packet_injection_test()
+            mock_launch.assert_not_called()
+            self.mock_msgbox.showwarning.assert_called_once_with(
+                "Monitor Mode Required",
+                "Please enable Monitor Mode before running the Packet Injection test."
+            )
+
     @patch('subprocess.run')
     def test_run_command_success(self, mock_run):
         """Test run_command_in_thread with successful execution."""
@@ -159,14 +196,14 @@ class TestMonitorGUI(unittest.TestCase):
         self.assertFalse(self.gui.tools_visible)
         self.gui.tools_container.pack_forget.assert_called_once()
         self.gui.btn_toggle_tools.config.assert_called_with(text="Show Quick Tools ▼")
-        self.mock_root.geometry.assert_called_with("420x370")
+        self.mock_root.geometry.assert_called_with("440x410")
         
         # Expand tools
         self.gui.toggle_tools_section()
         self.assertTrue(self.gui.tools_visible)
-        self.gui.tools_container.pack.assert_called_with(fill="x", pady=5)
+        self.gui.tools_container.pack.assert_called_with(fill="x", pady=2)
         self.gui.btn_toggle_tools.config.assert_called_with(text="Hide Quick Tools ▲")
-        self.mock_root.geometry.assert_called_with("420x580")
+        self.mock_root.geometry.assert_called_with("440x640")
 
     @patch('ezmonitormode.monitor_gui.get_interfaces_status')
     def test_get_active_monitor_interface_direct(self, mock_status):
@@ -214,6 +251,36 @@ class TestMonitorGUI(unittest.TestCase):
             "Monitor Mode Required",
             "Channel hopping requires monitor mode to be active."
         )
+
+    def test_channel_hopping_starts_and_stops(self):
+        """Test starting and stopping channel hopping."""
+        self.gui.is_monitor_on = True
+        self.gui.hop_var.get.return_value = True
+        self.gui.toggle_channel_hopping()
+        self.assertTrue(self.gui.is_channel_hopping)
+        
+        self.gui.stop_channel_hopping()
+        self.assertFalse(self.gui.is_channel_hopping)
+
+    @patch('subprocess.check_output')
+    def test_iwconfig_fallback_ignores_no_wireless_extensions(self, mock_output):
+        """Test that iwconfig fallback ignores non-wireless interfaces."""
+        from ezmonitormode.monitor_gui import get_interfaces_status
+        # Force iw dev to fail so iwconfig is called
+        def side_effect(cmd, **kwargs):
+            if cmd[0] == "iw":
+                raise FileNotFoundError("iw not found")
+            elif cmd[0] == "iwconfig":
+                return b"""eth0      no wireless extensions.
+lo        no wireless extensions.
+wlan0     IEEE 802.11  Mode:Managed  Frequency:2.412 GHz
+"""
+            return b""
+        mock_output.side_effect = side_effect
+        status = get_interfaces_status()
+        self.assertIn("wlan0", status)
+        self.assertNotIn("eth0", status)
+        self.assertNotIn("lo", status)
 
 
 if __name__ == '__main__':

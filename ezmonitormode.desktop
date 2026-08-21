@@ -1,7 +1,7 @@
 [Desktop Entry]
-Version=1.5.1
+Version=2.0.0
 Name=EZ Monitor Mode
-Comment=Easily switch WiFi to Monitor Mode
+Comment=Easily switch WiFi to Monitor Mode and audit wireless networks
 Exec=ezmonitormode
 Icon=network-wireless
 Terminal=false
