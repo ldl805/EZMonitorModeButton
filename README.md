@@ -83,31 +83,7 @@ _________________________
 *   **Broad Terminal Compatibility:** Auto-detects and supports `lxterminal`, `xfce4-terminal`, `mate-terminal`, `konsole`, `terminator`, `tilix`, `alacritty`, `kitty`, `foot`, `xterm`, and `gnome-terminal`.
 *   **Hardened Device Parsing:** Unicode-safe decoding and robust `iwconfig` filtering to ignore non-wireless interfaces.
 
-## Version 1.5.1
-*   **Attribute Order Fix:** Fixed initialization sequence in MonitorGUI.
-*   **Live Channel Controls:** Added real-time channel switching and interface telemetry.
 
-## Version 1.4.2
-*   **Subprocess Timeout Safeguards:** Protects GUI thread from freezing if a wireless driver hangs.
-*   **Smart Interface Injection:** Automatically passes target monitor interfaces to Wireshark (`-i`), Wifite (`-i`), and Kismet (`-c`).
-*   **Robust Dependency Guard:** Gracefully warns and disables action if the `airmon-ng` suite is missing.
-
-## Version 1.4.1
-*   **Targeted Interface Disabling:** Stop scripts now target specific monitor interfaces rather than alphabetically first.
-*   **Crash Safeguards:** Fixed a GUI refresh crash when started with no adapters connected, and added safe Unicode error decoding.
-*   **Legacy OS Compatibility:** Restores `dhcpcd` networking services on legacy Pi OS installations.
-*   **UX/Aesthetics:** Added interactive mouse cursor indicator and hover outline animations for the custom slider.
-*   **Subprocess Compatibility:** Runs terminal emulators as the original desktop user when launched via root wrapper to bypass desktop permission blocks.
-
-## Version 1.4.0
-*   **Collapsible Tools Panel:** Added a toggle button to collapse the Quick Tools section at the bottom, dynamically resizing the window to make only the main button/switch GUI visible.
-*   **Custom Glowing Toggle Switch:** Features a Canvas-based sliding switch flanked by status labels. Both ON and OFF are visible, with only the active state glowing (neon green for ON, bright red for OFF).
-*   **Smooth Non-Freezing GUI:** Ported command executions (`airmon-ng start/stop`) to background threads. The interface stays responsive and updates status messages in real-time during transitions.
-*   **Precise Interface Tracking:** Implemented exact status checking using a custom `iw dev` parser (with `iwconfig` fallback) to eliminate false positive states when multiple wireless adapters are active.
-*   **Smart Tool Launcher Validation:** Detects if Wifite, Wireshark, or Kismet are installed. If a tool is missing, its launch button is gracefully disabled and labeled `(N/A)`.
-*   **Slate Dark Theme:** Upgraded to a modern slate/charcoal styling configured via `ttk.Style`.
-*   **Window Centering:** GUI centers itself on launch for better desktop UX.
-*   **Interface Refresh:** Clear button to scan and refresh the list of available wireless cards.
 
 ## Installation (Recommended)
 
