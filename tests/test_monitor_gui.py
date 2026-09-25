@@ -8,7 +8,11 @@ from unittest.mock import patch, MagicMock, call
 # Add src to path so we can import the module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from ezmonitormode.monitor_gui import MonitorGUI, get_interface_details, VERSION
+from ezmonitormode.monitor_gui import (
+    MonitorGUI, get_interface_details, VERSION,
+    get_default_gateway_interface, get_device_driver_and_chipset,
+    run_cmd, cli_main, detect_interfaces
+)
 
 
 class TestMonitorGUI(unittest.TestCase):
@@ -281,6 +285,117 @@ wlan0     IEEE 802.11  Mode:Managed  Frequency:2.412 GHz
         self.assertIn("wlan0", status)
         self.assertNotIn("eth0", status)
         self.assertNotIn("lo", status)
+
+    @patch('builtins.open')
+    def test_get_default_gateway_interface(self, mock_open):
+        """Test reading default gateway interface from /proc/net/route."""
+        mock_file = MagicMock()
+        mock_file.readlines.return_value = [
+            "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n",
+            "wlan0\t00000000\t0101A8C0\t0003\t0\t0\t600\t00000000\t0\t0\t0\n",
+            "eth0\t0001A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0\n"
+        ]
+        mock_open.return_value.__enter__.return_value = mock_file
+        gw = get_default_gateway_interface()
+        self.assertEqual(gw, "wlan0")
+
+    @patch('os.path.islink')
+    @patch('os.readlink')
+    @patch('os.path.exists')
+    @patch('builtins.open')
+    def test_get_device_driver_and_chipset(self, mock_open, mock_exists, mock_readlink, mock_islink):
+        """Test fast sysfs extraction of driver and product chipset."""
+        mock_islink.return_value = True
+        mock_readlink.return_value = "../../../bus/usb/drivers/rtl88x2bu"
+        mock_exists.return_value = True
+        
+        mock_f = MagicMock()
+        mock_f.read.side_effect = ["802.11ac NIC", "up"]
+        mock_open.return_value.__enter__.return_value = mock_f
+        
+        info = get_device_driver_and_chipset("wlan0")
+        self.assertEqual(info["driver"], "rtl88x2bu")
+        self.assertEqual(info["chipset"], "802.11ac NIC")
+        self.assertEqual(info["operstate"], "up")
+
+    @patch('ezmonitormode.monitor_gui.get_interfaces_status')
+    @patch('ezmonitormode.monitor_gui.get_default_gateway_interface')
+    def test_detect_interfaces_prioritizes_secondary(self, mock_gw, mock_status):
+        """Test that secondary/external adapter is ordered before active gateway interface."""
+        mock_status.return_value = {"wlan0": "managed", "wlan1": "managed"}
+        mock_gw.return_value = "wlan0"
+        ifaces = detect_interfaces()
+        self.assertEqual(ifaces, ["wlan1", "wlan0"])
+
+    def test_enable_monitor_warns_on_active_gateway(self):
+        """Test that enabling monitor on active gateway shows high-priority warning."""
+        self.gui.interface = "wlan0"
+        with patch('ezmonitormode.monitor_gui.get_default_gateway_interface', return_value="wlan0"):
+            self.mock_msgbox.askyesno.return_value = False
+            self.gui.enable_monitor()
+            self.mock_msgbox.askyesno.assert_called_once()
+            args = self.mock_msgbox.askyesno.call_args[0]
+            self.assertIn("ACTIVE network", args[1])
+
+    @patch('shutil.which')
+    @patch('subprocess.Popen')
+    def test_launch_in_terminal_alacritty_bash_c(self, mock_popen, mock_which):
+        """Test terminal launch uses bash -c on modern terminals like alacritty."""
+        mock_which.side_effect = lambda t: t == "alacritty"
+        self.gui.launch_in_terminal("airodump-ng wlan0mon", "Airodump-ng")
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        self.assertEqual(args[0], "alacritty")
+        self.assertEqual(args[1], "-e")
+        self.assertEqual(args[2], "bash")
+        self.assertEqual(args[3], "-c")
+
+    @patch('shutil.which')
+    @patch('subprocess.Popen')
+    def test_launch_in_terminal_injection_test_pauses(self, mock_popen, mock_which):
+        """Test packet injection test appends pause prompt so terminal stays visible."""
+        mock_which.side_effect = lambda t: t == "lxterminal"
+        self.gui.launch_in_terminal("aireplay-ng --test wlan0mon", "Packet Injection Test")
+        mock_popen.assert_called_once()
+        args = mock_popen.call_args[0][0]
+        self.assertEqual(args[0], "lxterminal")
+        self.assertIn("Press Enter to close window", args[2])
+
+    @patch('ezmonitormode.monitor_gui.detect_interfaces', return_value=["wlan0"])
+    @patch('ezmonitormode.monitor_gui.get_interfaces_status', return_value={"wlan0": "managed"})
+    @patch('ezmonitormode.monitor_gui.get_default_gateway_interface', return_value="wlan0")
+    @patch('ezmonitormode.monitor_gui.get_interface_details')
+    def test_cli_main_status(self, mock_details, mock_gw, mock_status, mock_ifaces):
+        """Test headless CLI --status output."""
+        mock_details.return_value = {
+            "driver": "rtl88x2bu", "chipset": "802.11ac NIC", "mode": "managed",
+            "ssid": "Skynet", "mac": "00:11:22:33:44:55", "channel": "153",
+            "freq": "5765 MHz", "txpower": "18.00 dBm", "operstate": "up"
+        }
+        args = MagicMock()
+        args.status = True
+        args.channel = None
+        args.test_injection = False
+        args.on = False
+        args.off = False
+        args.iface = None
+        ret = cli_main(args)
+        self.assertEqual(ret, 0)
+
+    @patch('ezmonitormode.monitor_gui.detect_interfaces', return_value=["wlan0"])
+    @patch('ezmonitormode.monitor_gui.get_default_gateway_interface', return_value="wlan0")
+    def test_cli_main_on_refuses_active_gateway_without_force(self, mock_gw, mock_ifaces):
+        """Test that CLI --on blocks toggling default gateway without --force."""
+        args = MagicMock()
+        args.status = False
+        args.channel = None
+        args.test_injection = False
+        args.on = True
+        args.off = False
+        args.iface = "wlan0"
+        args.force = False
+        ret = cli_main(args)
+        self.assertEqual(ret, 1)
 
 
 if __name__ == '__main__':

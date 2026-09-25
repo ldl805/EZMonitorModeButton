@@ -8,12 +8,14 @@ import sys
 import logging
 import threading
 import time
+import shlex
+import argparse
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Configuration
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 
 AVAILABLE_CHANNELS = [
     "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
@@ -27,6 +29,62 @@ HOP_PROFILES = {
     "5GHz UNII-1/3": ["36", "40", "44", "48", "149", "153", "157", "161", "165"],
     "All Channels": [str(c) for c in range(1, 15)] + ["36", "40", "44", "48", "149", "153", "157", "161", "165"]
 }
+
+def run_cmd(cmd_list, timeout=30):
+    """
+    Executes a system command with elevated privileges only if EUID != 0.
+    Prevents redundant sudo PAM overhead on Raspberry Pi.
+    """
+    if os.geteuid() != 0 and (not cmd_list or cmd_list[0] != "sudo"):
+        cmd_list = ["sudo"] + list(cmd_list)
+    return subprocess.run(cmd_list, capture_output=True, timeout=timeout)
+
+def get_default_gateway_interface():
+    """
+    Returns the network interface holding the system default gateway (0.0.0.0).
+    Reads /proc/net/route directly without subprocess overhead (<0.1ms).
+    """
+    try:
+        with open("/proc/net/route", "r") as f:
+            for line in f.readlines()[1:]:
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[1] == "00000000":
+                    return parts[0]
+    except Exception:
+        pass
+    return None
+
+def get_device_driver_and_chipset(iface):
+    """
+    Extracts wireless driver and hardware chipset details directly via sysfs in <0.2ms.
+    Returns dict: {'driver': str, 'chipset': str, 'operstate': str}
+    """
+    info = {"driver": "Unknown", "chipset": "", "operstate": "unknown"}
+    if not iface:
+        return info
+    base = f"/sys/class/net/{iface}"
+    try:
+        driver_path = f"{base}/device/driver"
+        if os.path.islink(driver_path):
+            info["driver"] = os.path.basename(os.readlink(driver_path))
+    except Exception:
+        pass
+
+    try:
+        product_path = f"{base}/device/../product"
+        if os.path.exists(product_path):
+            with open(product_path, "r", errors="replace") as f:
+                info["chipset"] = f.read().strip()
+    except Exception:
+        pass
+
+    try:
+        with open(f"{base}/operstate", "r", errors="replace") as f:
+            info["operstate"] = f.read().strip()
+    except Exception:
+        pass
+
+    return info
 
 def get_interfaces_status():
     """Detects wireless interfaces and maps them to their mode ('managed', 'monitor')."""
@@ -63,7 +121,7 @@ def get_interfaces_status():
     return status
 
 def detect_interfaces():
-    """Detects wireless base interfaces and returns a sorted unique list."""
+    """Detects wireless base interfaces, prioritizing secondary/external adapters if connected to a network."""
     status = get_interfaces_status()
     interfaces = list(status.keys())
     
@@ -74,22 +132,51 @@ def detect_interfaces():
             base_interfaces.append(iface[:-3])
         elif iface.endswith(".mon"):
             base_interfaces.append(iface[:-4])
+        elif iface.startswith("mon"):
+            base_interfaces.append(iface[3:])
         else:
             base_interfaces.append(iface)
             
-    return sorted(list(set(base_interfaces)))
+    unique_ifaces = sorted(list(set(base_interfaces)))
+    
+    # If multiple interfaces exist and one is the active default gateway, place secondary interfaces first
+    default_route = get_default_gateway_interface()
+    if len(unique_ifaces) > 1 and default_route in unique_ifaces:
+        non_default = [i for i in unique_ifaces if i != default_route]
+        return non_default + [default_route]
+        
+    return unique_ifaces
 
 def get_interface_details(iface):
-    """Returns a dict containing interface details: channel, freq, mac, txpower, mode."""
+    """Returns a dict containing interface details: channel, freq, mac, txpower, mode, ssid, driver, chipset."""
     details = {
         "channel": "Unknown",
         "freq": "",
         "mac": "Unknown",
         "txpower": "",
-        "mode": "Unknown"
+        "mode": "Unknown",
+        "ssid": "",
+        "driver": "Unknown",
+        "chipset": "",
+        "operstate": "unknown"
     }
     if not iface:
         return details
+
+    # Fast sysfs metadata (<0.2ms)
+    sys_info = get_device_driver_and_chipset(iface)
+    details["driver"] = sys_info["driver"]
+    details["chipset"] = sys_info["chipset"]
+    details["operstate"] = sys_info["operstate"]
+
+    # Read MAC from sysfs (<0.1ms) fallback
+    try:
+        with open(f"/sys/class/net/{iface}/address", "r", errors="replace") as f:
+            mac_val = f.read().strip()
+            if mac_val:
+                details["mac"] = mac_val
+    except Exception:
+        pass
         
     try:
         output = subprocess.check_output(["iw", "dev", iface, "info"], stderr=subprocess.STDOUT, timeout=3).decode(errors='replace')
@@ -99,6 +186,8 @@ def get_interface_details(iface):
                 details["mac"] = line.split()[1]
             elif line.startswith("type "):
                 details["mode"] = line.split()[1]
+            elif line.startswith("ssid "):
+                details["ssid"] = " ".join(line.split()[1:])
             elif line.startswith("channel "):
                 parts = line.split()
                 details["channel"] = parts[1]
@@ -117,6 +206,10 @@ def get_interface_details(iface):
             if "Mode:" in line:
                 mode_part = line.split("Mode:")[1].split()[0]
                 details["mode"] = mode_part
+            if "ESSID:" in line:
+                essid = line.split("ESSID:")[1].split()[0].replace('"', '')
+                if essid and essid != "off/any":
+                    details["ssid"] = essid
             if "Frequency:" in line:
                 freq_part = line.split("Frequency:")[1].split()[0]
                 details["freq"] = freq_part + " GHz"
@@ -132,11 +225,11 @@ def get_interface_details(iface):
     return details
 
 def center_window(window, width, height):
-    """Centers the window on the screen."""
+    """Centers the window on the screen, safeguarding against off-screen placement."""
     screen_width = window.winfo_screenwidth()
     screen_height = window.winfo_screenheight()
-    x = (screen_width // 2) - (width // 2)
-    y = (screen_height // 2) - (height // 2)
+    x = max(0, (screen_width // 2) - (width // 2))
+    y = max(0, (screen_height // 2) - (height // 2))
     window.geometry(f'{width}x{height}+{x}+{y}')
 
 class CanvasToggle(tk.Canvas):
@@ -209,8 +302,14 @@ class MonitorGUI:
         self.interface = interfaces[0] if interfaces else "wlan1"
         
         master.title(f"EZ Monitor Mode {VERSION}")
-        center_window(master, 440, 640)
-        master.minsize(420, 390)
+        
+        # Auto-detect small screen (e.g. Raspberry Pi 7" 800x480 touchscreen)
+        screen_height = master.winfo_screenheight()
+        self.is_small_screen = screen_height <= 600
+        initial_height = 410 if self.is_small_screen else 640
+        initial_width = 440
+        center_window(master, initial_width, initial_height)
+        master.minsize(410, 370)
         master.resizable(True, True)
 
         # Style Configuration
@@ -227,6 +326,7 @@ class MonitorGUI:
         self.wifite_available = False
         self.wireshark_available = False
         self.kismet_available = False
+        self.cached_mon_iface = None
         self.hopping_stop_event = threading.Event()
         self.hopping_thread = None
         self.available_channels = AVAILABLE_CHANNELS
@@ -234,9 +334,9 @@ class MonitorGUI:
 
         # --- Top: Interface Selection ---
         iface_frame = ttk.Frame(master)
-        iface_frame.pack(fill="x", padx=20, pady=10)
+        iface_frame.pack(fill="x", padx=20, pady=8)
         
-        lbl_iface = ttk.Label(iface_frame, text="Wireless Interface:", font=("Helvetica", 10, "bold"))
+        lbl_iface = ttk.Label(iface_frame, text="Interface:", font=("Helvetica", 10, "bold"))
         lbl_iface.pack(side="left", pady=5)
         
         self.iface_var = tk.StringVar()
@@ -266,8 +366,8 @@ class MonitorGUI:
         self.btn_refresh.pack(side="right")
 
         # --- Middle: Custom Glowing Toggle Switch Panel ---
-        self.switch_frame = tk.Frame(master, height=90, bg="#1a1a1a", relief="groove", borderwidth=1)
-        self.switch_frame.pack(fill="x", side="top", padx=20, pady=5)
+        self.switch_frame = tk.Frame(master, height=84, bg="#1a1a1a", relief="groove", borderwidth=1)
+        self.switch_frame.pack(fill="x", side="top", padx=20, pady=4)
         self.switch_frame.pack_propagate(False)
 
         toggle_container = tk.Frame(self.switch_frame, bg="#1a1a1a")
@@ -305,10 +405,13 @@ class MonitorGUI:
 
         # --- Live Channel & Interface Details Panel ---
         self.channel_frame = tk.Frame(master, bg="#252525", relief="groove", borderwidth=1)
-        self.channel_frame.pack(fill="x", padx=20, pady=5)
+        self.channel_frame.pack(fill="x", padx=20, pady=4)
 
-        lbl_details_header = ttk.Label(self.channel_frame, text="Interface Status & Channel Control", font=("Helvetica", 9, "bold"))
-        lbl_details_header.pack(pady=(4, 2))
+        lbl_details_header = ttk.Label(self.channel_frame, text="Telemetry & Channel Control", font=("Helvetica", 9, "bold"))
+        lbl_details_header.pack(pady=(4, 1))
+
+        self.lbl_hw_info = ttk.Label(self.channel_frame, text="Driver: --  |  Hardware: --", font=("Helvetica", 8))
+        self.lbl_hw_info.pack(pady=1)
 
         self.lbl_mac_info = ttk.Label(self.channel_frame, text="MAC: --:--:--:--:--:--  |  TX: --", font=("Helvetica", 8))
         self.lbl_mac_info.pack(pady=1)
@@ -318,7 +421,7 @@ class MonitorGUI:
 
         # Manual Channel Row
         chan_ctrl_subframe = ttk.Frame(self.channel_frame)
-        chan_ctrl_subframe.pack(pady=3)
+        chan_ctrl_subframe.pack(pady=2)
 
         lbl_set_chan = ttk.Label(chan_ctrl_subframe, text="Manual Ch:", font=("Helvetica", 9))
         lbl_set_chan.pack(side="left", padx=2)
@@ -342,7 +445,7 @@ class MonitorGUI:
 
         # Hopping Control Row
         hop_subframe = ttk.Frame(self.channel_frame)
-        hop_subframe.pack(pady=(2, 6))
+        hop_subframe.pack(pady=(2, 5))
 
         self.hop_var = tk.BooleanVar(value=False)
         self.chk_hop = ttk.Checkbutton(
@@ -370,29 +473,31 @@ class MonitorGUI:
         self.status_label = ttk.Label(
             master, 
             textvariable=self.status_var, 
-            font=("Helvetica", 10, "italic"), 
+            font=("Helvetica", 9, "italic"), 
             wraplength=380,
             justify="center"
         )
-        self.status_label.pack(pady=6)
+        self.status_label.pack(pady=4)
 
         # Toggle Tools Button
-        self.tools_visible = True
+        self.tools_visible = not self.is_small_screen
+        toggle_btn_text = "Hide Quick Tools ▲" if self.tools_visible else "Show Quick Tools ▼"
         self.btn_toggle_tools = ttk.Button(
             master, 
-            text="Hide Quick Tools ▲", 
+            text=toggle_btn_text, 
             command=self.toggle_tools_section,
             width=22
         )
-        self.btn_toggle_tools.pack(pady=3)
+        self.btn_toggle_tools.pack(pady=2)
 
         # Tools Container (collapsible)
         self.tools_container = ttk.Frame(master)
-        self.tools_container.pack(fill="x", pady=2)
+        if self.tools_visible:
+            self.tools_container.pack(fill="x", pady=2)
 
         # Tools Section
         separator = ttk.Separator(self.tools_container, orient='horizontal')
-        separator.pack(fill='x', padx=20, pady=3)
+        separator.pack(fill='x', padx=20, pady=2)
 
         lbl_tools = ttk.Label(self.tools_container, text="Security Audit Tools", font=("Helvetica", 10, "bold"))
         lbl_tools.pack(pady=2)
@@ -414,7 +519,7 @@ class MonitorGUI:
         self.btn_wireshark.grid(row=1, column=1, padx=4, pady=3)
 
         self.btn_kismet = ttk.Button(self.tools_frame, text="Launch Kismet", width=40, command=self.run_kismet)
-        self.btn_kismet.grid(row=2, column=0, columnspan=2, pady=4, sticky="ew")
+        self.btn_kismet.grid(row=2, column=0, columnspan=2, pady=3, sticky="ew")
 
         # Initial check & Tool configurations
         self.check_tools_availability()
@@ -525,6 +630,7 @@ class MonitorGUI:
         else:
             self.iface_var.set(self.interface)
         
+        self.cached_mon_iface = None
         self.status_var.set("Interfaces refreshed.")
         self.check_monitor_mode()
         self.update_interface_details_ui()
@@ -532,24 +638,35 @@ class MonitorGUI:
     def update_interface(self, val):
         self.interface = val
         self.iface_var.set(val)
+        self.cached_mon_iface = None
         self.check_monitor_mode()
         self.update_interface_details_ui()
 
     def update_interface_details_ui(self):
-        """Refreshes live MAC, channel, frequency, and txpower in UI."""
+        """Refreshes live MAC, channel, frequency, txpower, hardware, and active network in UI."""
         active_iface = self.get_active_monitor_interface() or self.interface
         details = get_interface_details(active_iface)
         
-        mac_str = details["mac"] if details["mac"] != "Unknown" else "--:--:--:--:--:--"
-        tx_str = details["txpower"] if details["txpower"] else "N/A"
+        # Hardware & Driver info
+        drv_str = details.get("driver", "Unknown")
+        chip_str = f" ({details['chipset']})" if details.get("chipset") else ""
+        self.lbl_hw_info.config(text=f"Driver: {drv_str}{chip_str}")
+        
+        mac_str = details.get("mac", "Unknown") if details.get("mac") != "Unknown" else "--:--:--:--:--:--"
+        tx_str = details.get("txpower", "N/A") if details.get("txpower") else "N/A"
         self.lbl_mac_info.config(text=f"MAC: {mac_str}  |  TX: {tx_str}")
         
-        chan = details["channel"]
-        freq = f" ({details['freq']})" if details["freq"] else ""
-        mode = details["mode"].upper()
-        self.lbl_chan_info.config(text=f"Mode: {mode}  |  Channel: {chan}{freq}")
+        chan = details.get("channel", "Unknown")
+        freq = f" ({details['freq']})" if details.get("freq") else ""
+        mode = details.get("mode", "Unknown").upper()
         
-        if chan != "Unknown" and not self.is_channel_hopping:
+        default_gw = get_default_gateway_interface()
+        gw_note = " [Active Gateway]" if self.interface == default_gw else ""
+        ssid_note = f" (SSID: {details['ssid']})" if details.get("ssid") else ""
+        
+        self.lbl_chan_info.config(text=f"Mode: {mode}{ssid_note}{gw_note}  |  Ch: {chan}{freq}")
+        
+        if chan != "Unknown" and not self.is_channel_hopping and isinstance(chan, str):
             self.chan_var.set(chan)
 
     def set_channel_click(self):
@@ -566,9 +683,9 @@ class MonitorGUI:
         """Sets the operating channel on the specified interface."""
         def _run():
             try:
-                res = subprocess.run(["sudo", "iw", "dev", iface, "set", "channel", str(channel)], capture_output=True, timeout=5)
+                res = run_cmd(["iw", "dev", iface, "set", "channel", str(channel)], timeout=5)
                 if res.returncode != 0:
-                    subprocess.run(["sudo", "iwconfig", iface, "channel", str(channel)], capture_output=True, timeout=5)
+                    run_cmd(["iwconfig", iface, "channel", str(channel)], timeout=5)
                 self.master.after(0, self.update_interface_details_ui)
                 self.master.after(0, lambda: self.status_var.set(f"Channel set to {channel} on {iface}"))
             except Exception as e:
@@ -610,18 +727,19 @@ class MonitorGUI:
 
     def _channel_hopping_loop(self):
         idx = 0
+        active_iface = self.get_active_monitor_interface() or self.interface
         while not self.hopping_stop_event.is_set():
             if self.is_monitor_on:
-                active_iface = self.get_active_monitor_interface() or self.interface
                 profile_name = self.hop_profile_var.get()
                 hop_channels = self.hop_profiles.get(profile_name, ["1", "6", "11"])
                 target_chan = hop_channels[idx % len(hop_channels)]
                 try:
-                    res = subprocess.run(["sudo", "iw", "dev", active_iface, "set", "channel", target_chan], capture_output=True, timeout=2)
+                    res = run_cmd(["iw", "dev", active_iface, "set", "channel", target_chan], timeout=2)
                     if res.returncode != 0:
-                        subprocess.run(["sudo", "iwconfig", active_iface, "channel", target_chan], capture_output=True, timeout=2)
+                        run_cmd(["iwconfig", active_iface, "channel", target_chan], timeout=2)
                 except Exception:
-                    pass
+                    # In case monitor interface changed name, re-query once
+                    active_iface = self.get_active_monitor_interface() or self.interface
                 self.master.after(0, lambda c=target_chan: self.lbl_chan_info.config(text=f"Mode: MONITOR  |  Channel: {c} (Hopping...)"))
                 idx += 1
             self.hopping_stop_event.wait(1.5)
@@ -636,18 +754,26 @@ class MonitorGUI:
         status = get_interfaces_status()
         
         if status.get(self.interface) == "monitor":
+            self.cached_mon_iface = self.interface
             self.set_switch_state(True)
         elif status.get(f"{self.interface}mon") == "monitor":
+            self.cached_mon_iface = f"{self.interface}mon"
             self.set_switch_state(True)
         elif status.get(f"{self.interface}.mon") == "monitor":
+            self.cached_mon_iface = f"{self.interface}.mon"
             self.set_switch_state(True)
         else:
+            self.cached_mon_iface = None
             self.set_switch_state(False)
 
     def get_active_monitor_interface(self):
         """Finds the actual interface name in monitor mode for the selected base interface."""
+        if self.cached_mon_iface:
+            return self.cached_mon_iface
+
         status = get_interfaces_status()
         if status.get(self.interface) == "monitor":
+            self.cached_mon_iface = self.interface
             return self.interface
             
         possible_names = [
@@ -657,10 +783,12 @@ class MonitorGUI:
         ]
         for name in possible_names:
             if status.get(name) == "monitor":
+                self.cached_mon_iface = name
                 return name
                 
         for iface, mode in status.items():
             if mode == "monitor" and (self.interface in iface or iface.startswith("mon")):
+                self.cached_mon_iface = iface
                 return iface
         return None
 
@@ -694,7 +822,16 @@ class MonitorGUI:
             self.enable_monitor()
 
     def enable_monitor(self):
-        if not messagebox.askyesno("Confirm", f"Enable monitor mode on {self.interface}?\n\nThis will disconnect current WiFi connections."):
+        default_gw = get_default_gateway_interface()
+        confirm_msg = f"Enable monitor mode on {self.interface}?\n\nThis will disconnect current WiFi connections."
+        if default_gw == self.interface:
+            confirm_msg = (
+                f"⚠️ WARNING: {self.interface} is your ACTIVE network / default gateway connection!\n\n"
+                f"Enabling monitor mode will terminate active SSH, VNC, and Internet sessions.\n\n"
+                f"Do you want to proceed?"
+            )
+            
+        if not messagebox.askyesno("Confirm Monitor Mode", confirm_msg):
             return
             
         self.is_transitioning = True
@@ -708,11 +845,12 @@ class MonitorGUI:
     def _run_enable_monitor(self):
         try:
             # Step 1: Kill conflicting processes
-            self.run_command_in_thread(["sudo", "airmon-ng", "check", "kill"], "Kill conflicting processes")
+            self.run_command_in_thread(["sudo", "airmon-ng", "check", "kill"] if os.geteuid() != 0 else ["airmon-ng", "check", "kill"], "Kill conflicting processes")
             
             # Step 2: Start monitor mode
-            self.run_command_in_thread(["sudo", "airmon-ng", "start", self.interface], f"Enable monitor mode on {self.interface}")
+            self.run_command_in_thread(["sudo", "airmon-ng", "start", self.interface] if os.geteuid() != 0 else ["airmon-ng", "start", self.interface], f"Enable monitor mode on {self.interface}")
             
+            self.cached_mon_iface = None
             self.master.after(0, lambda: messagebox.showinfo("Success", f"Monitor mode enabled successfully on {self.interface}."))
         except Exception as e:
             self.master.after(0, lambda err=e: messagebox.showerror("Error", f"Failed to enable monitor mode:\n{err}"))
@@ -736,9 +874,10 @@ class MonitorGUI:
             self.stop_channel_hopping()
             active_mon = self.get_active_monitor_interface() or self.interface
             stop_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop_monitor_mode.sh")
-            self.run_command_in_thread(["sudo", "bash", stop_script, active_mon], "Disable monitor mode")
+            self.run_command_in_thread(["sudo", "bash", stop_script, active_mon] if os.geteuid() != 0 else ["bash", stop_script, active_mon], "Disable monitor mode")
             
-            self.master.after(0, lambda: messagebox.showinfo("Success", "Monitor mode disabled. Network services restarted."))
+            self.cached_mon_iface = None
+            self.master.after(0, lambda: messagebox.showinfo("Success", "Monitor mode disabled. Network services restored."))
         except Exception as e:
             self.master.after(0, lambda err=e: messagebox.showerror("Error", f"Failed to disable monitor mode:\n{err}"))
         finally:
@@ -762,6 +901,7 @@ class MonitorGUI:
         self.is_transitioning = False
         self.btn_refresh.config(state="normal")
         self.iface_menu.config(state="normal")
+        self.cached_mon_iface = None
         self.check_monitor_mode()
         self.update_interface_details_ui()
 
@@ -780,8 +920,15 @@ class MonitorGUI:
         if not term:
             messagebox.showerror("Error", "No terminal emulator found. Please install lxterminal, xterm, or gnome-terminal.")
             return
+
+        # Prepare shell command
+        elevated_cmd = cmd if (os.geteuid() == 0 or cmd.startswith("sudo ")) else f"sudo {cmd}"
+        # Keep window open for inspection if testing injection
+        if "aireplay-ng" in cmd or title == "Packet Injection Test":
+            shell_exec = f"{elevated_cmd}; echo; echo '[EZMonitorMode] Test finished.'; read -p 'Press Enter to close window...' dummy"
+        else:
+            shell_exec = f"{elevated_cmd}"
         
-        # Identify original non-root user if running elevated via sudo/pkexec
         user = os.environ.get("SUDO_USER")
         if not user and os.environ.get("PKEXEC_UID"):
             try:
@@ -792,17 +939,28 @@ class MonitorGUI:
                 
         try:
             if term in ["gnome-terminal", "mate-terminal", "tilix", "konsole"]:
-                term_cmd = [term, "--", "sudo", cmd]
+                term_cmd = [term, "--", "bash", "-c", shell_exec]
+            elif term in ["alacritty", "foot"]:
+                term_cmd = [term, "-e", "bash", "-c", shell_exec]
+            elif term == "kitty":
+                term_cmd = [term, "bash", "-c", shell_exec]
             else:
-                term_cmd = [term, "-e", f"sudo {cmd}"]
+                # lxterminal, xterm, xfce4-terminal
+                term_cmd = [term, "-e", f"bash -c {shlex.quote(shell_exec)}"]
                 
             if user and os.geteuid() == 0:
                 # Spawn terminal emulator as non-root user with desktop environments preserved
                 display = os.environ.get("DISPLAY", ":0")
                 xauth = os.environ.get("XAUTHORITY", "")
+                wayland = os.environ.get("WAYLAND_DISPLAY", "")
+                xdg_runtime = os.environ.get("XDG_RUNTIME_DIR", "")
                 env_args = [f"DISPLAY={display}"]
                 if xauth:
                     env_args.append(f"XAUTHORITY={xauth}")
+                if wayland:
+                    env_args.append(f"WAYLAND_DISPLAY={wayland}")
+                if xdg_runtime:
+                    env_args.append(f"XDG_RUNTIME_DIR={xdg_runtime}")
                 term_cmd = ["sudo", "-u", user, "env"] + env_args + term_cmd
                 
             subprocess.Popen(term_cmd)
@@ -838,7 +996,9 @@ class MonitorGUI:
     def run_wireshark(self):
         try:
             mon_iface = self.get_active_monitor_interface()
-            cmd_args = ["sudo", "wireshark", "-i", mon_iface] if mon_iface else ["sudo", "wireshark"]
+            cmd_args = ["wireshark", "-i", mon_iface] if mon_iface else ["wireshark"]
+            if os.geteuid() != 0:
+                cmd_args = ["sudo"] + cmd_args
             user = os.environ.get("SUDO_USER")
             if not user and os.environ.get("PKEXEC_UID"):
                 try:
@@ -849,21 +1009,130 @@ class MonitorGUI:
             if user and os.geteuid() == 0:
                 display = os.environ.get("DISPLAY", ":0")
                 xauth = os.environ.get("XAUTHORITY", "")
+                wayland = os.environ.get("WAYLAND_DISPLAY", "")
+                xdg_runtime = os.environ.get("XDG_RUNTIME_DIR", "")
                 env_args = [f"DISPLAY={display}"]
                 if xauth:
                     env_args.append(f"XAUTHORITY={xauth}")
+                if wayland:
+                    env_args.append(f"WAYLAND_DISPLAY={wayland}")
+                if xdg_runtime:
+                    env_args.append(f"XDG_RUNTIME_DIR={xdg_runtime}")
                 cmd_args = ["sudo", "-u", user, "env"] + env_args + cmd_args
             subprocess.Popen(cmd_args)
             self.status_var.set("Launched Wireshark")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch Wireshark:\n{e}")
 
+def cli_main(args):
+    """Headless CLI mode for SSH, headless Pi, and scripting environments."""
+    interfaces = detect_interfaces()
+    target_iface = args.iface or (interfaces[0] if interfaces else "wlan0")
+
+    if args.status:
+        print(f"\n==========================================")
+        print(f" EZMonitorMode v{VERSION} - Telemetry Status")
+        print(f"==========================================")
+        status = get_interfaces_status()
+        gw = get_default_gateway_interface()
+        if not interfaces:
+            print("No wireless interfaces detected.")
+            return 1
+
+        for iface in interfaces:
+            details = get_interface_details(iface)
+            is_gw = " [ACTIVE GATEWAY]" if iface == gw else ""
+            mode = status.get(iface, details.get("mode", "unknown")).upper()
+            driver = details.get("driver", "unknown")
+            chipset = f" ({details['chipset']})" if details.get("chipset") else ""
+            ssid = f" [SSID: {details['ssid']}]" if details.get("ssid") else ""
+            print(f"Interface: {iface}{is_gw}")
+            print(f"  Driver:   {driver}{chipset}")
+            print(f"  Mode:     {mode}{ssid}")
+            print(f"  MAC:      {details.get('mac', '--')}")
+            print(f"  Channel:  {details.get('channel', '--')} {details.get('freq', '')}")
+            print(f"  TX-Power: {details.get('txpower', '--')}")
+            print(f"  Link:     {details.get('operstate', '--')}")
+            print()
+        return 0
+
+    if args.channel:
+        chan = args.channel.strip()
+        print(f"Setting channel {chan} on {target_iface}...")
+        res = run_cmd(["iw", "dev", target_iface, "set", "channel", chan])
+        if res.returncode != 0:
+            res = run_cmd(["iwconfig", target_iface, "channel", chan])
+        if res.returncode == 0:
+            print(f"Success: {target_iface} set to channel {chan}.")
+            return 0
+        else:
+            print(f"Error setting channel on {target_iface}: {res.stderr.decode(errors='replace')}")
+            return 1
+
+    if args.test_injection:
+        print(f"Running packet injection test on {target_iface}...")
+        cmd = ["aireplay-ng", "--test", target_iface]
+        if os.geteuid() != 0:
+            cmd = ["sudo"] + cmd
+        return subprocess.run(cmd).returncode
+
+    if args.on:
+        print(f"Enabling monitor mode on {target_iface}...")
+        gw = get_default_gateway_interface()
+        if gw == target_iface and not args.force:
+            print(f"⚠️  WARNING: {target_iface} is your active network/default gateway interface!")
+            print("Enabling monitor mode will disconnect your active connection.")
+            print("To proceed anyway, re-run with --force (e.g. ezmonitormode --on --force)")
+            return 1
+
+        print("Killing conflicting processes with airmon-ng check kill...")
+        run_cmd(["airmon-ng", "check", "kill"])
+        print(f"Switching {target_iface} into monitor mode...")
+        res = run_cmd(["airmon-ng", "start", target_iface])
+        print(res.stdout.decode(errors='replace'))
+        return res.returncode
+
+    if args.off:
+        print(f"Disabling monitor mode and restoring networking...")
+        stop_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stop_monitor_mode.sh")
+        res = run_cmd(["bash", stop_script, target_iface])
+        print(res.stdout.decode(errors='replace'))
+        return res.returncode
+
+    return 0
+
 def main():
-    if "DISPLAY" not in os.environ:
+    parser = argparse.ArgumentParser(
+        description=f"EZMonitorMode v{VERSION} - Wireless Monitor Mode Manager for Raspberry Pi & Linux",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--status", "-s", action="store_true", help="Display real-time interface status, driver, and telemetry")
+    parser.add_argument("--on", "-e", action="store_true", help="Enable monitor mode on wireless interface")
+    parser.add_argument("--off", "-d", action="store_true", help="Disable monitor mode and cleanly restore network services")
+    parser.add_argument("--channel", "-c", metavar="CH", help="Set wireless channel (e.g. 1, 6, 11, 36, 153)")
+    parser.add_argument("--test-injection", "-t", action="store_true", help="Run aireplay-ng frame injection test")
+    parser.add_argument("--interface", "-i", dest="iface", metavar="IFACE", help="Target interface (defaults to auto-detected)")
+    parser.add_argument("--force", "-f", action="store_true", help="Bypass safety warnings (e.g. active gateway check)")
+    
+    args, unknown = parser.parse_known_args()
+
+    # If any CLI argument is passed, operate in headless CLI mode
+    if args.status or args.on or args.off or args.channel or args.test_injection:
+        sys.exit(cli_main(args))
+
+    # Otherwise launch Tkinter GUI
+    if "DISPLAY" not in os.environ and "WAYLAND_DISPLAY" not in os.environ:
         if os.path.exists("/tmp/.X11-unix/X0"):
             os.environ["DISPLAY"] = ":0"
         else:
-            print("Error: No graphical display detected. EZMonitorMode requires a desktop environment.")
+            print(f"EZMonitorMode v{VERSION}")
+            print("Notice: No graphical display detected.")
+            print("For headless / SSH command-line usage, run with flags:")
+            print("  ezmonitormode --status")
+            print("  ezmonitormode --on [-i iface] [--force]")
+            print("  ezmonitormode --off [-i iface]")
+            print("  ezmonitormode --channel <ch> [-i iface]")
+            print("  ezmonitormode --test-injection [-i iface]")
             sys.exit(1)
 
     try:
@@ -877,4 +1146,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

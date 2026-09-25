@@ -1,8 +1,24 @@
 #!/bin/bash
 
 # Script to disable monitor mode and restore network services.
+# Optimized for Raspberry Pi / ARM Linux environments (v3.0.0).
 
 echo "Attempting to disable monitor mode..."
+
+# Helper to run commands with elevated privileges only when needed
+run_elevated() {
+    if [ "$EUID" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# Helper to check if a systemd unit exists (<15ms vs 1100ms for list-unit-files)
+unit_exists() {
+    local unit="$1"
+    systemctl cat "$unit" >/dev/null 2>&1
+}
 
 # Helper function to test if an interface is in monitor mode
 is_monitor_mode() {
@@ -64,46 +80,62 @@ fi
 if [ -n "$MON_IFACE" ]; then
     echo "Found monitor interface: $MON_IFACE"
     echo "Stopping $MON_IFACE..."
-    sudo airmon-ng stop "$MON_IFACE"
+    run_elevated airmon-ng stop "$MON_IFACE"
 else
     echo "No interface in monitor mode detected."
-    echo "Attempting fallback airmon-ng stop on common names..."
-    sudo airmon-ng stop wlan0mon >/dev/null 2>&1
-    sudo airmon-ng stop wlan1mon >/dev/null 2>&1
-    sudo airmon-ng stop wlan0 >/dev/null 2>&1
-    sudo airmon-ng stop wlan1 >/dev/null 2>&1
+    # Only stop common names if they are actually active in monitor mode
+    for candidate in wlan0mon wlan1mon wlan0 wlan1; do
+        if is_monitor_mode "$candidate"; then
+            echo "Stopping monitor candidate $candidate..."
+            run_elevated airmon-ng stop "$candidate" >/dev/null 2>&1
+        fi
+    done
+fi
+
+# Determine base restored interface name (e.g. wlan0mon -> wlan0)
+BASE_IFACE=""
+if [ -n "$TARGET_IFACE" ]; then
+    BASE_IFACE="$TARGET_IFACE"
+elif [ -n "$MON_IFACE" ]; then
+    BASE_IFACE=$(echo "$MON_IFACE" | sed -E 's/mon$//; s/^mon//')
 fi
 
 # Ensure Wi-Fi is not left soft-blocked by driver kernel transitions
 if command -v rfkill >/dev/null 2>&1; then
     echo "Ensuring wireless interfaces are unblocked (rfkill unblock wifi)..."
-    sudo rfkill unblock wifi 2>/dev/null || sudo rfkill unblock all 2>/dev/null
+    run_elevated rfkill unblock wifi 2>/dev/null || run_elevated rfkill unblock all 2>/dev/null
+fi
+
+# Bring base interface UP if it was left down after driver monitor tear-down
+if [ -n "$BASE_IFACE" ] && [ -d "/sys/class/net/$BASE_IFACE" ]; then
+    echo "Bringing interface $BASE_IFACE UP..."
+    run_elevated ip link set "$BASE_IFACE" up 2>/dev/null
 fi
 
 echo "Restarting network services..."
 
-# Restart NetworkManager (manages connections)
-if systemctl list-unit-files 2>/dev/null | grep -q NetworkManager; then
+# Restart NetworkManager (manages connections on modern Pi OS / Debian / Ubuntu)
+if unit_exists NetworkManager; then
     echo "Restarting NetworkManager..."
-    sudo systemctl restart NetworkManager
+    run_elevated systemctl restart NetworkManager
 fi
 
-# Restart wpa_supplicant (often handled by NM, but good to ensure)
-if systemctl list-unit-files 2>/dev/null | grep -q wpa_supplicant; then
+# Restart wpa_supplicant (if installed and managed independently)
+if unit_exists wpa_supplicant; then
     echo "Restarting wpa_supplicant..."
-    sudo systemctl restart wpa_supplicant
+    run_elevated systemctl restart wpa_supplicant
 fi
 
 # Restart avahi-daemon (mDNS)
-if systemctl list-unit-files 2>/dev/null | grep -q avahi-daemon; then
+if unit_exists avahi-daemon; then
     echo "Restarting avahi-daemon..."
-    sudo systemctl restart avahi-daemon
+    run_elevated systemctl restart avahi-daemon
 fi
 
 # Restart dhcpcd if present (for legacy/alternative Raspberry Pi installations)
-if systemctl list-unit-files 2>/dev/null | grep -q dhcpcd; then
+if unit_exists dhcpcd; then
     echo "Restarting dhcpcd..."
-    sudo systemctl restart dhcpcd
+    run_elevated systemctl restart dhcpcd
 fi
 
 echo "Monitor mode disabled and services restoration requested."

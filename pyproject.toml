@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ezmonitormode"
-version = "2.0.0"
+version = "3.0.0"
 authors = [
   { name="ldl805" },
 ]
-description = "A simple GUI to enable/disable monitor mode on wireless interfaces."
+description = "A fast, nimble GUI and CLI to manage wireless monitor mode and audit networks on Raspberry Pi & Linux."
 readme = "README.md"
 requires-python = ">=3.7"
 license = { text = "MIT" }

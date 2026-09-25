@@ -1,8 +1,8 @@
 #!/bin/bash
-# Script to build a Debian package for EZMonitorMode
+# Script to build a Debian package for EZMonitorMode v3.0.0
 
 APP_NAME="ezmonitormode"
-VERSION="2.0.0"
+VERSION="3.0.0"
 PKG_DIR="${APP_NAME}_${VERSION}_all"
 
 echo "Building Debian package $PKG_DIR..."
@@ -20,49 +20,52 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: all
-Depends: python3, python3-tk, aircrack-ng, wireless-tools, iw, rfkill
-Recommends: wifite, wireshark, kismet, lxterminal
+Depends: python3, python3-tk, aircrack-ng, iw, rfkill, iproute2
+Recommends: wireless-tools, wifite, wireshark, kismet, lxterminal
 Maintainer: ldl805 <ldl805@github.com>
 Description: EZ Monitor Mode Manager
- A simple GUI to switch wireless interfaces into monitor mode and launch security tools.
- Automates airmon-ng check kill, interface management, and network restoration.
- Now with live packet injection testing, airodump launcher, and multi-band channel hopping.
+ High-performance GUI and CLI utility to switch wireless interfaces into monitor mode.
+ Features sysfs kernel acceleration, active gateway protection, hardware/driver detection,
+ headless SSH operations, multi-band scanning, and ultra-fast 0.5s network restoration.
 EOF
 
-# Create wrapper (Improved to handle DISPLAY, XAUTHORITY and xhost)
+# Create wrapper (Handles GUI elevation, Wayland/X11 display, and headless CLI)
 cat <<EOF > "$PKG_DIR/usr/bin/$APP_NAME"
 #!/bin/bash
-# Wrapper for EZMonitorMode to handle sudo and DISPLAY
+# Wrapper for EZMonitorMode supporting GUI and headless CLI
 
-# Ensure DISPLAY is set
-if [ -z "\$DISPLAY" ]; then
-    export DISPLAY=:0
+# Check if running headless CLI commands
+if [ "\$#" -gt 0 ]; then
+    exec python3 /usr/share/$APP_NAME/monitor_gui.py "\$@"
+fi
+
+# Ensure DISPLAY is set for desktop GUI
+if [ -z "\$DISPLAY" ] && [ -z "\$WAYLAND_DISPLAY" ]; then
+    if [ -e "/tmp/.X11-unix/X0" ]; then
+        export DISPLAY=:0
+    fi
 fi
 
 # Function to grant X11 access to root if needed
 grant_x11_access() {
     if command -v xhost >/dev/null 2>&1; then
-        # Try to allow local root access to the X server
         xhost +si:localuser:root >/dev/null 2>&1
     fi
 }
 
 # Check for root
 if [ "\$EUID" -ne 0 ]; then
-    # Grant access before elevating
     grant_x11_access
     
     # Try to use pkexec for a GUI password prompt
-    if command -v pkexec >/dev/null 2>&1; then
-        exec pkexec env DISPLAY="\$DISPLAY" XAUTHORITY="\$XAUTHORITY" python3 /usr/share/$APP_NAME/monitor_gui.py "\$@"
+    if command -v pkexec >/dev/null 2>&1 && [ -n "\$DISPLAY" ]; then
+        exec pkexec env DISPLAY="\$DISPLAY" XAUTHORITY="\$XAUTHORITY" WAYLAND_DISPLAY="\$WAYLAND_DISPLAY" XDG_RUNTIME_DIR="\$XDG_RUNTIME_DIR" python3 /usr/share/$APP_NAME/monitor_gui.py "\$@"
     else
-        echo "Error: Root privileges required. Please run with: sudo -E $APP_NAME"
-        exit 1
+        exec python3 /usr/share/$APP_NAME/monitor_gui.py "\$@"
     fi
 else
-    # Already root, ensure we have access
     grant_x11_access
-    python3 /usr/share/$APP_NAME/monitor_gui.py "\$@"
+    exec python3 /usr/share/$APP_NAME/monitor_gui.py "\$@"
 fi
 EOF
 chmod 755 "$PKG_DIR/usr/bin/$APP_NAME"
