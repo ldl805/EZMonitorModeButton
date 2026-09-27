@@ -1,5 +1,9 @@
 # EZMonitorModeButton
 
+<p align="center">
+  <img src="ezmonapp3.png" alt="EZ Monitor Mode 3.0 GUI" width="400">
+</p>
+
 A simple yet robust Python GUI for the Raspberry Pi to easily enable and disable monitor mode on a wireless interface.
 
  _________________________
@@ -75,6 +79,9 @@ _________________________
     ⋮     
 
 
+## Version 3.0.1
+*   **Documentation:** Added visual application dashboard showcase (`ezmonapp3.png`) displaying real-time telemetry, channel control, and security audit tools.
+
 ## Version 3.0.0 (High-Performance Pi & Headless Release!)
 *   **70x Faster Network Restoration:** Replaced legacy `systemctl list-unit-files` checks with direct `systemctl cat` unit inspection, slashing network recovery delays from ~5-8 seconds to <0.5s.
 *   **Full Headless / SSH CLI Mode:** Operate entirely via terminal without X11 or a desktop display! Supports `ezmonitormode --status`, `ezmonitormode --on [-i iface] [--force]`, `ezmonitormode --off`, `ezmonitormode --channel <ch>`, and `ezmonitormode --test-injection`.
@@ -103,7 +110,7 @@ Download the latest `.deb` file from the [Releases](https://github.com/ldl805/EZ
 
 ```bash
 sudo apt update
-sudo apt install ./ezmonitormode_3.0.0_all.deb
+sudo apt install ./ezmonitormode_3.0.1_all.deb
 ```
 
 Once installed, you can launch it from your application menu or by running `ezmonitormode` in the terminal.

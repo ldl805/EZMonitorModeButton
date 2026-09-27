@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to disable monitor mode and restore network services.
-# Optimized for Raspberry Pi / ARM Linux environments (v3.0.0).
+# Optimized for Raspberry Pi / ARM Linux environments (v3.0.1).
 
 echo "Attempting to disable monitor mode..."
 
