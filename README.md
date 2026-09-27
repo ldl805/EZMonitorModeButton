@@ -79,26 +79,9 @@ _________________________
     ⋮     
 
 
-## Version 3.0.1
-*   **Documentation:** Added visual application dashboard showcase (`ezmonapp3.png`) displaying real-time telemetry, channel control, and security audit tools.
+## Changelog
 
-## Version 3.0.0 (High-Performance Pi & Headless Release!)
-*   **70x Faster Network Restoration:** Replaced legacy `systemctl list-unit-files` checks with direct `systemctl cat` unit inspection, slashing network recovery delays from ~5-8 seconds to <0.5s.
-*   **Full Headless / SSH CLI Mode:** Operate entirely via terminal without X11 or a desktop display! Supports `ezmonitormode --status`, `ezmonitormode --on [-i iface] [--force]`, `ezmonitormode --off`, `ezmonitormode --channel <ch>`, and `ezmonitormode --test-injection`.
-*   **Active Gateway & SSH Session Guard:** Automatically detects which interface carries the default gateway (via `/proc/net/route`) and displays explicit safety warnings before dropping active Internet or SSH connections.
-*   **Hardware & Driver Telemetry:** Directly extracts wireless driver name (e.g. `rtl88x2bu`, `brcmfmac`) and USB chipset information from kernel sysfs in sub-millisecond time.
-*   **Responsive Small-Screen / Pi Touchscreen Mode:** Auto-detects display height (<=600px) and launches in compact mode (390px) to prevent vertical overflow on Raspberry Pi 7" touchscreens (800x480).
-*   **Persistent Injection Test Terminals:** Terminals running `aireplay-ng --test` now pause on completion with "Press Enter to close window...", allowing users to inspect injection percentages and ping ratios before closing.
-*   **Modern Terminal Compatibility:** Hardened terminal spawning using universal `bash -c` syntax across `alacritty`, `kitty`, `foot`, `lxterminal`, `xterm`, and Wayland desktop environments.
-*   **Channel Hopping Engine Optimization:** Caches active monitor interface and drops idle CPU utilization by >80%.
-
-## Version 2.0.0 (Major Release!)
-*   **Packet Injection Testing:** Integrated one-click frame injection test via `aireplay-ng --test <interface>` with live terminal output.
-*   **Airodump-ng Quick Launcher:** Direct launcher for live network scanning and BSSID discovery.
-*   **Multi-Band Channel Hopping Engine:** Selectable auto-hopping presets including `1, 6, 11 (2.4GHz)`, `All 2.4GHz (1-14)`, `5GHz UNII-1/3 (36-165)`, and `All Channels`.
-*   **RFKill Driver Safeguards:** Automatically unblocks wireless interfaces (`rfkill unblock wifi`) during network restoration to prevent hardware soft-blocks on USB dongles.
-*   **Broad Terminal Compatibility:** Auto-detects and supports `lxterminal`, `xfce4-terminal`, `mate-terminal`, `konsole`, `terminator`, `tilix`, `alacritty`, `kitty`, `foot`, `xterm`, and `gnome-terminal`.
-*   **Hardened Device Parsing:** Unicode-safe decoding and robust `iwconfig` filtering to ignore non-wireless interfaces.
+For the complete release history and detailed version notes, visit the [Wiki Changelog](https://github.com/ldl805/EZMonitorModeButton/wiki/Changelog).
 
 
 
